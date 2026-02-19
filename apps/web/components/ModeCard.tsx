@@ -1,5 +1,5 @@
+﻿import clsx from "clsx";
 import Link from "next/link";
-import clsx from "clsx";
 
 export const ModeCard = ({
   title,
@@ -15,17 +15,24 @@ export const ModeCard = ({
   <Link
     href={href}
     className={clsx(
-      "focusable group relative block overflow-hidden rounded-2xl border p-5 transition duration-200 ease-out hover:-translate-y-1 hover:shadow-panel",
-      "bg-gradient-to-b from-slate-800/95 to-slate-950/95",
-      accent === "orange" && "border-orange-400/45 hover:shadow-glowOrange",
-      accent === "blue" && "border-sky-400/45 hover:shadow-glowBlue",
-      accent === "red" && "border-rose-400/45 hover:shadow-led",
-      accent === "neutral" && "border-white/20 hover:border-white/45"
+      "group card-hover relative flex h-full flex-col overflow-hidden rounded-xl border p-8 transition-all",
+      "bg-white dark:bg-white/5 border-slate-200 dark:border-white/10",
+      accent === "orange" && "hover:border-[#ee8c2b]",
+      accent === "blue" && "hover:border-sky-400",
+      accent === "red" && "hover:border-rose-400",
+      accent === "neutral" && "hover:border-[#ee8c2b]"
     )}
   >
-    <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.08),transparent_55%)] opacity-75 transition group-hover:opacity-100" />
-    <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-white/55 to-transparent opacity-0 transition group-hover:opacity-100" />
-    <h3 className="relative font-display text-4xl uppercase leading-none tracking-wide">{title}</h3>
-    <p className="relative mt-2 text-sm text-slate-300">{description}</p>
+    <div className="absolute -right-4 -top-4 size-24 rounded-full bg-[#ee8c2b]/5 group-hover:bg-[#ee8c2b]/10" />
+    <div className="mb-6 size-14 rounded-xl bg-[#ee8c2b] flex items-center justify-center shadow-lg shadow-[#ee8c2b]/20">
+      <span className="material-symbols-outlined text-[#221910] text-3xl font-bold">sports_basketball</span>
+    </div>
+    <h4 className="text-xl font-bold mb-3 uppercase tracking-tight">{title}</h4>
+    <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed mb-8">{description}</p>
+    <div className="mt-auto flex items-center justify-between">
+      <span className="text-[10px] font-black uppercase tracking-widest text-[#ee8c2b]">Play Mode</span>
+      <span className="material-symbols-outlined text-[#ee8c2b]/40 group-hover:text-[#ee8c2b]">arrow_forward_ios</span>
+    </div>
   </Link>
 );
+

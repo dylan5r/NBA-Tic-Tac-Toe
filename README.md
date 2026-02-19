@@ -1,176 +1,167 @@
-# NBA Tic-Tac-Toe (Desktop Web)
+# NBA Tic-Tac-Toe
 
-Production-ready desktop-first web app inspired by footy-tic-tac-toe, rebuilt with an NBA theme.
+Desktop-first NBA trivia Tic-Tac-Toe web app with local play, AI, online rooms, matchmaking, Elo, and server-authoritative realtime gameplay.
 
-## 1) Architecture Plan
+## Quick Intro
+NBA Tic-Tac-Toe is a knowledge-based grid game:
+- You pick a square on the board.
+- Each square is defined by a row prompt + a column prompt.
+- You must enter an NBA player who satisfies both prompts.
+- If correct, you claim the square with your symbol.
+- First player to complete a line wins the round.
 
-- Frontend (`apps/web`): Next.js App Router + TypeScript + TailwindCSS.
-- Backend (`apps/server`): Express + Socket.IO (server-authoritative realtime state).
-- Shared game logic (`packages/game-engine`): board rules, win detection, legal moves, AI (easy/medium/hard with minimax).
-- Shared contracts (`packages/contracts`): typed Socket.IO event contracts and shared DTOs.
-- Persistence: Postgres + Prisma (`apps/server/prisma/schema.prisma`) for users, rooms, and matches/replays.
-- NBA validation dataset: local CSVs in `nbadata/` (Players + PlayerStatisticsScoring), loaded by `apps/server/src/nbaData.ts`.
+Examples:
+- Row: `Played for the Lakers`
+- Column: `All-Star`
+- Valid answer could be a player who satisfies both conditions.
 
-### Realtime state machine
+If you are new, start with:
+1. `Local Play` for learning flow.
+2. `AI Challenge` for practice.
+3. `Ranked` once you are comfortable.
 
-- `LOBBY -> COUNTDOWN -> IN_GAME -> ROUND_END -> MATCH_END`
+## Stack
+- `apps/web`: Next.js App Router + TypeScript + Tailwind CSS
+- `apps/server`: Express + Socket.IO + Prisma
+- `packages/game-engine`: shared board rules + AI
+- `packages/contracts`: shared typed socket contracts
+- Database: PostgreSQL
+- NBA validation data: local CSVs (auto-detected by server)
 
-### Authoritative server responsibilities
+## Gameplay Model
+- Realtime state flow: `LOBBY -> COUNTDOWN -> IN_GAME -> ROUND_END -> MATCH_END`
+- Server authoritative:
+  - turn order
+  - timers
+  - move validation
+  - reconnect grace + forfeit handling
+  - ranked Elo updates
 
-- Validate moves.
-- Track turn/order/timer.
-- Handle reconnect grace window and forfeits.
-- Persist ranked results and rating deltas.
+## NBA Prompt/Validation Rules (Current)
+- Prompt answers are restricted to players active in roughly the last 10 years (based on player seasons in dataset).
+- Grid generation enforces minimum playability: each row/column intersection targets at least 5 possible valid answers.
+- Multi-team `A AND B teams` prompts are excluded to reduce impossible boards.
 
-## 2) File Tree
-
+## Monorepo Layout
 ```text
-.
-├─ apps
-│  ├─ server
-│  │  ├─ prisma/schema.prisma
-│  │  ├─ src
-│  │  │  ├─ db.ts
-│  │  │  ├─ index.ts
-│  │  │  ├─ server.ts
-│  │  │  ├─ state.ts
-│  │  │  └─ utils.ts
-│  │  ├─ tests
-│  │  │  ├─ rest.test.ts
-│  │  │  └─ socket-flow.test.ts
-│  │  ├─ .env.example
-│  │  ├─ package.json
-│  │  └─ tsconfig.json
-│  └─ web
-│     ├─ app
-│     │  ├─ leaderboard/page.tsx
-│     │  ├─ match/[id]/page.tsx
-│     │  ├─ profile/page.tsx
-│     │  ├─ room/[code]/page.tsx
-│     │  ├─ setup/page.tsx
-│     │  ├─ globals.css
-│     │  ├─ layout.tsx
-│     │  ├─ page.tsx
-│     │  └─ providers.tsx
-│     ├─ components
-│     │  ├─ GameBoard.tsx
-│     │  ├─ LeftPanel.tsx
-│     │  ├─ ModeCard.tsx
-│     │  ├─ RightPanel.tsx
-│     │  └─ SettingsModal.tsx
-│     ├─ lib
-│     │  ├─ api.ts
-│     │  ├─ config.ts
-│     │  ├─ local-game.ts
-│     │  └─ socket.ts
-│     ├─ tests/smoke.spec.ts
-│     ├─ .env.example
-│     ├─ next.config.ts
-│     ├─ package.json
-│     ├─ playwright.config.ts
-│     ├─ postcss.config.js
-│     ├─ tailwind.config.ts
-│     └─ tsconfig.json
-├─ packages
-│  ├─ contracts
-│  │  ├─ src/index.ts
-│  │  ├─ package.json
-│  │  └─ tsconfig.json
-│  └─ game-engine
-│     ├─ src/index.ts
-│     ├─ tests/engine.test.ts
-│     ├─ package.json
-│     └─ tsconfig.json
-├─ .gitignore
-├─ package.json
-└─ tsconfig.base.json
+apps/
+  server/
+    prisma/
+    src/
+    tests/
+  web/
+    app/
+    components/
+    lib/
+    tests/
+packages/
+  contracts/
+  game-engine/
 ```
 
-## 3) Prisma Schema
-
-`apps/server/prisma/schema.prisma` includes:
-
-- `User`: username, rating, W/L, streak, settings.
-- `Match`: ranked/unranked metadata, moves JSON replay, winner, rating deltas.
-- `Room`: host/settings/players/spectators/state snapshot.
-
-## 4) Socket Event Contracts
-
-All typed contracts are in `packages/contracts/src/index.ts`:
-
-- Matchmaking: `matchmaking:join`, `matchmaking:leave`, `matchmaking:found`
-- Rooms: `room:create`, `room:join`, `room:leave`, `room:ready`, `room:start`, `room:settings`, `room:stateSync`
-- Gameplay: `game:move`, `game:timerTick`, `game:over`, `game:rematch`, `game:ratingDelta`
-- Reconnect: `session:resume`, `reconnect:resume`, `reconnect:countdown`
-
-## 5) Run Locally
-
-### Prereqs
-
+## Prerequisites
 - Node.js 20+
-- Postgres 14+
+- PostgreSQL 14+
 
-### Setup
-
-1. Install dependencies at repo root:
+## Local Setup
+1. Install dependencies:
    - `npm install`
 2. Configure env files:
-   - Copy `apps/server/.env.example` -> `apps/server/.env`
-   - Copy `apps/web/.env.example` -> `apps/web/.env.local`
-3. Run Prisma:
+   - `apps/server/.env.example` -> `apps/server/.env`
+   - `apps/web/.env.example` -> `apps/web/.env.local`
+3. Generate Prisma client + run migrations:
    - `npm run prisma:generate --workspace @nba/server`
    - `npm run prisma:migrate:dev --workspace @nba/server`
-4. Start app (two processes via one command):
+4. Start full app:
    - `npm run dev`
 
-Frontend runs on `http://localhost:3000`, backend on `http://localhost:4000`.
+Default URLs:
+- Web: `http://localhost:3000`
+- Server: `http://localhost:4000`
 
-## 6) Test
+## NBA Data Input (Auto-Detected)
+The server checks several folder names (`nbadata`, `nba_data`, `nba_data/csv`, etc.) and supports:
 
-- Unit game engine: `npm run test --workspace @nba/game-engine`
-- Backend integration: `npm run test --workspace @nba/server`
-- E2E smoke (web): `npm run test:e2e --workspace @nba/web`
+1. Basketball-Reference style set (recommended)
+- `Player Career Info.csv`
+- `Player Season Info.csv`
+- `Player Per Game.csv`
+- Optional enrichments:
+  - `All-Star Selections.csv`
+  - `Draft Pick History.csv`
+  - `Player Award Shares.csv`
+  - `End of Season Teams.csv`
 
-## NBA Dataset
+2. Legacy/simple set
+- `Players.csv`
+- `PlayerStatistics.csv` or `PlayerStatisticsScoring.csv`
 
-- Put dataset files in `nbadata/` at repo root.
-- Required files:
-  - `Players.csv`
-  - `PlayerStatisticsScoring.csv`
-- Server auto-detects this folder and builds runtime indices for answer validation.
+3. NBA stats CSV folder style (`nba_data/csv`)
+- `player.csv`
+- `common_player_info.csv`
+- `play_by_play.csv`
+- Optional:
+  - `game.csv`
+  - `draft_history.csv`
 
-## 7) Deploy
+If none are found, the server falls back to a tiny built-in seed dataset.
 
-### Backend (Render/Fly/Railway)
+## Scripts
+Root:
+- `npm run dev` - run web + server (and opens browser)
+- `npm run build` - build all workspaces
+- `npm run test` - engine + server tests
+- `npm run lint` - web lint
 
-1. Deploy `apps/server`.
-2. Set env vars:
-   - `PORT=4000`
-   - `DATABASE_URL=...`
-   - `CORS_ORIGIN=https://<your-vercel-domain>`
-3. Build/start:
-   - Build: `npm run build --workspace @nba/server`
-   - Start: `npm run start --workspace @nba/server`
-4. Run migrations in deploy hook:
-   - `npm run prisma:migrate --workspace @nba/server`
+Web (`@nba/web`):
+- `npm run dev --workspace @nba/web`
+- `npm run build --workspace @nba/web`
+- `npm run lint --workspace @nba/web`
+- `npm run test:e2e:install --workspace @nba/web`
+- `npm run test:e2e --workspace @nba/web`
 
-### Frontend (Vercel)
+Server (`@nba/server`):
+- `npm run dev --workspace @nba/server`
+- `npm run build --workspace @nba/server`
+- `npm run test --workspace @nba/server`
+- `npm run prisma:generate --workspace @nba/server`
+- `npm run prisma:migrate:dev --workspace @nba/server`
 
-1. Deploy `apps/web`.
-2. Env vars:
-   - `NEXT_PUBLIC_API_URL=https://<backend-domain>`
-   - `NEXT_PUBLIC_SOCKET_URL=https://<backend-domain>`
-3. Build command:
-   - `npm run build --workspace @nba/web`
+## Socket Coverage
+Core typed events are in `packages/contracts/src/index.ts`.
 
-## Feature Coverage
+Includes:
+- matchmaking (`matchmaking:*`)
+- rooms (`room:*`)
+- gameplay (`game:move`, `game:rematch`, `game:surrender`, timer/over events)
+- reconnect/session resume
 
-- Desktop-first polished UI with left/right panels and centered stage.
-- Local pass-and-play.
-- AI modes (easy/medium/hard minimax).
-- Online quick matchmaking + private rooms.
-- Ranked/unranked support + Elo updates.
-- Reconnection grace flow.
-- Spectator join support.
-- Match move history and replay controls.
-- Leaderboard (global/weekly) and profile history.
+## Deploy
+### Server
+Required env vars:
+- `PORT`
+- `DATABASE_URL`
+- `CORS_ORIGIN` (comma-separated allowed origins)
+
+Typical deploy commands:
+- Build: `npm run build --workspace @nba/server`
+- Start: `npm run start --workspace @nba/server`
+- Migrate: `npm run prisma:migrate --workspace @nba/server`
+
+### Web
+Required env vars:
+- `NEXT_PUBLIC_API_URL`
+- `NEXT_PUBLIC_SOCKET_URL`
+
+Build:
+- `npm run build --workspace @nba/web`
+
+## Current Feature Coverage
+- Local pass-and-play
+- AI modes (easy/medium/hard)
+- Ranked/unranked matchmaking
+- Private rooms + lobby settings + ready/start flow
+- In-game timers (per-move/per-game/none)
+- Answer validation with autocomplete + canonical player matching
+- Match replay controls at match end
+- Leaderboard + profile history

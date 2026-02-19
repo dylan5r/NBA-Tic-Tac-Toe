@@ -103,6 +103,7 @@ export interface ClientToServerEvents {
   "room:start": (payload: { userId: string; roomCode: string }) => void;
   "room:settings": (payload: { userId: string; roomCode: string; settings: RoomSettings }) => void;
   "game:move": (payload: { userId: string; roomCode: string; index: number; answer?: string }) => void;
+  "game:surrender": (payload: { userId: string; roomCode: string }) => void;
   "game:rematch": (payload: { userId: string; roomCode: string }) => void;
   "reconnect:resume": (payload: { userId: string; roomCode: string }) => void;
 }

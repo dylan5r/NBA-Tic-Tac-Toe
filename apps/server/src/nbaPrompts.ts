@@ -240,29 +240,12 @@ export const buildPromptCatalog = (): NbaPrompt[] => {
     }))
   );
 
-  for (let i = 0; i < teams.length; i += 1) {
-    for (let j = i + 1; j < teams.length; j += 1) {
-      const a = teams[i]!;
-      const b = teams[j]!;
-      prompts.push({
-        id: `combo_${a.code.toLowerCase()}_${b.code.toLowerCase()}`,
-        type: "combo",
-        category: "combo",
-        difficulty: "hard",
-        weight: weightByDifficulty("hard"),
-        text: `Played for ${a.name} AND ${b.name}`,
-        validation: { teamsAll: [a.code, b.code] }
-      });
-    }
-  }
-
   const expertPrompts: NbaPrompt[] = [
     { id: "expert_27_no_mvp", type: "expert", category: "expert", difficulty: "expert", weight: weightByDifficulty("expert"), text: "Averaged 27+ PPG but never MVP", validation: { ppg_season: 27, never_mvp: true } },
     { id: "expert_champ_no_allstar", type: "expert", category: "expert", difficulty: "expert", weight: weightByDifficulty("expert"), text: "Champion but never All-Star", validation: { champion: true, never_all_star: true } },
     { id: "expert_kobe_and_lebron", type: "expert", category: "expert", difficulty: "expert", weight: weightByDifficulty("expert"), text: "Played with Kobe AND LeBron", validation: { teammatesAll: ["Kobe Bryant", "LeBron James"] } },
     { id: "expert_pick1_no_allstar", type: "expert", category: "expert", difficulty: "expert", weight: weightByDifficulty("expert"), text: "#1 Pick but never All-Star", validation: { draft_overall_eq: 1, never_all_star: true } },
     { id: "expert_allstar_no_champ", type: "expert", category: "expert", difficulty: "expert", weight: weightByDifficulty("expert"), text: "All-Star but never Champion", validation: { all_star: true, never_champion: true } },
-    { id: "expert_lakers_celtics", type: "expert", category: "expert", difficulty: "expert", weight: weightByDifficulty("expert"), text: "Played for Lakers AND Celtics", validation: { teamsAll: ["LAL", "BOS"] } },
     { id: "expert_hof_no_ring", type: "expert", category: "expert", difficulty: "expert", weight: weightByDifficulty("expert"), text: "Hall of Famer without championship", validation: { hof: true, never_champion: true } },
     { id: "expert_20_no_allnba", type: "expert", category: "expert", difficulty: "expert", weight: weightByDifficulty("expert"), text: "20+ PPG career but never All-NBA", validation: { career_ppg_gte: 20, never_all_nba: true } },
     { id: "expert_15_one_team", type: "expert", category: "expert", difficulty: "expert", weight: weightByDifficulty("expert"), text: "Played 15+ seasons with one team", validation: { seasons_gte: 15, one_franchise: true } },
@@ -270,5 +253,6 @@ export const buildPromptCatalog = (): NbaPrompt[] => {
   ];
   prompts.push(...expertPrompts);
 
-  return prompts;
+  // Exclude multi-team "A AND B teams" prompts to keep challenge combinations playable.
+  return prompts.filter((p) => !p.validation.teamsAll?.length);
 };

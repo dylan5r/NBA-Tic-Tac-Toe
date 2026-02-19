@@ -8,17 +8,23 @@ export const GameBoard = ({
   rowLabels,
   colLabels,
   usedAnswers,
+  cellAnswersByIndex,
+  hoverSymbol = "X",
   onCell,
   disabled,
-  size = 3
+  size = 3,
+  compact = false
 }: {
   board: ("X" | "O" | null)[];
   rowLabels?: string[];
   colLabels?: string[];
   usedAnswers?: string[];
+  cellAnswersByIndex?: Record<number, string>;
+  hoverSymbol?: "X" | "O";
   onCell: (i: number) => void;
   disabled?: boolean;
   size?: 3 | 4;
+  compact?: boolean;
 }) => {
   const winLine = useMemo(() => {
     const lines =
@@ -65,6 +71,139 @@ export const GameBoard = ({
     };
   }, [size, winLine]);
 
+  if (compact) {
+    const boardSizeClass = "w-[min(60vw,600px)] max-w-[600px]";
+    const boardGapClass = "gap-5";
+    const promptTextClass =
+      "flex h-full items-center justify-center px-2 text-center text-xs font-semibold uppercase tracking-wide leading-tight text-[#b8b8b8]";
+    const hoverBorderClass = hoverSymbol === "X" ? "hover:border-blue-500/70" : "hover:border-[#f97316]/70";
+
+    return (
+      <div className="relative z-10 w-full max-w-[960px]">
+        <div className="hidden gap-2 md:grid md:grid-cols-[180px_1fr]">
+          <div className={clsx("grid py-5", boardGapClass, "h-[min(60vw,600px)]")} style={{ gridTemplateRows: `repeat(${size}, minmax(0, 1fr))` }}>
+            {(rowLabels ?? Array(size).fill("Row prompt")).map((label, idx) => (
+              <div key={`cr-${idx}`} className={clsx(promptTextClass, "self-center")}>
+                {label}
+              </div>
+            ))}
+          </div>
+          <div>
+            <div className={clsx("mx-auto mb-3 grid px-5", boardGapClass, boardSizeClass)} style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))` }}>
+              {(colLabels ?? Array(size).fill("Column prompt")).map((label, idx) => (
+                <div key={`cc-${idx}`} className={promptTextClass}>
+                  {label}
+                </div>
+              ))}
+            </div>
+            <div className={clsx("relative mx-auto aspect-square rounded-xl border-2 border-[#4a4a4a]/60 bg-[#1e1e1e] p-5", boardSizeClass)}>
+              <div className="pointer-events-none absolute left-1/2 top-0 h-16 w-32 -translate-x-1/2 rounded-b-full border-b-2 border-l-2 border-r-2 border-[#4a4a4a]/40" />
+              <div className="pointer-events-none absolute bottom-0 left-1/2 h-16 w-32 -translate-x-1/2 rounded-t-full border-l-2 border-r-2 border-t-2 border-[#4a4a4a]/40" />
+              <div className={clsx("grid h-full w-full", boardGapClass)} style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${size}, minmax(0, 1fr))` }}>
+                {board.map((value, idx) => {
+                  const row = Math.floor(idx / size);
+                  const col = idx % size;
+                  const coord = `${String.fromCharCode(65 + row)}${col + 1}`;
+                  const answer = cellAnswersByIndex?.[idx];
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      className={clsx(
+                        "focusable board-cell group relative flex aspect-square items-center justify-center overflow-hidden rounded border-2 border-[#4a4a4a]/60 transition-all duration-200",
+                        value ? "cursor-default bg-[#121212]" : clsx("cursor-pointer bg-[#121212]/60", hoverBorderClass),
+                        disabled && "cursor-not-allowed opacity-80"
+                      )}
+                      onClick={() => onCell(idx)}
+                      disabled={disabled || value !== null}
+                      aria-label={`Cell ${idx + 1}`}
+                    >
+                      {value === "X" && (
+                        <span className="material-symbols-outlined text-6xl text-blue-500 [filter:drop-shadow(0_0_8px_rgba(59,130,246,0.5))]">close</span>
+                      )}
+                      {value === "O" && (
+                        <span className="material-symbols-outlined text-6xl text-[#f97316] [filter:drop-shadow(0_0_8px_rgba(249,115,22,0.5))]">circle</span>
+                      )}
+                      {!value && (
+                        <span className={clsx("material-symbols-outlined scale-75 text-6xl opacity-0 transition-all duration-300 group-hover:scale-100 group-hover:opacity-30", hoverSymbol === "X" ? "text-blue-500" : "text-[#f97316]")}>
+                          {hoverSymbol === "X" ? "close" : "circle"}
+                        </span>
+                      )}
+                      {answer && (
+                        <span className="absolute left-2 right-2 top-2 line-clamp-2 text-center text-[10px] font-medium text-white/90">
+                          {answer}
+                        </span>
+                      )}
+                      <span className="absolute bottom-2 right-2 font-mono text-[10px] text-[#a3a3a3] opacity-50">{coord}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {winLine && lineStyle && (
+                <div
+                  className="pointer-events-none absolute h-1 origin-left animate-draw-line rounded-full bg-gradient-to-r from-orange-300 to-red-400 shadow-glowOrange"
+                  style={lineStyle}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="md:hidden">
+          <div className="mb-2 grid gap-2" style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))` }}>
+            {(colLabels ?? Array(size).fill("Column prompt")).map((label, idx) => (
+              <div key={`mcc-${idx}`} className="flex min-h-[48px] items-center justify-center px-2 py-1 text-center text-[10px] font-semibold uppercase tracking-wide leading-tight text-[#b8b8b8]">
+                {label}
+              </div>
+            ))}
+          </div>
+          <div className="relative mx-auto aspect-square w-[min(92vw,680px)] max-w-[680px] rounded-xl border-2 border-[#4a4a4a]/60 bg-[#1e1e1e] p-4">
+            <div className="grid h-full w-full gap-3" style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${size}, minmax(0, 1fr))` }}>
+              {board.map((value, idx) => {
+                const row = Math.floor(idx / size);
+                const col = idx % size;
+                const coord = `${String.fromCharCode(65 + row)}${col + 1}`;
+                const answer = cellAnswersByIndex?.[idx];
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    className={clsx(
+                      "focusable board-cell group relative flex aspect-square items-center justify-center overflow-hidden rounded border-2 border-[#4a4a4a]/60 transition-all duration-200",
+                      value ? "cursor-default bg-[#121212]" : clsx("cursor-pointer bg-[#121212]/60", hoverBorderClass),
+                      disabled && "cursor-not-allowed opacity-80"
+                    )}
+                    onClick={() => onCell(idx)}
+                    disabled={disabled || value !== null}
+                    aria-label={`Cell ${idx + 1}`}
+                  >
+                    {value === "X" && <span className="material-symbols-outlined text-5xl text-blue-500">close</span>}
+                    {value === "O" && <span className="material-symbols-outlined text-5xl text-[#f97316]">circle</span>}
+                    {!value && (
+                      <span className={clsx("material-symbols-outlined scale-75 text-5xl opacity-0 transition-all duration-300 group-hover:scale-100 group-hover:opacity-30", hoverSymbol === "X" ? "text-blue-500" : "text-[#f97316]")}>
+                        {hoverSymbol === "X" ? "close" : "circle"}
+                      </span>
+                    )}
+                    {answer && <span className="absolute left-1 right-1 top-1 line-clamp-2 text-center text-[9px] text-white/90">{answer}</span>}
+                    <span className="absolute bottom-1 right-1 font-mono text-[9px] text-[#a3a3a3] opacity-50">{coord}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {winLine && lineStyle && <div className="pointer-events-none absolute h-1 origin-left rounded-full bg-gradient-to-r from-orange-300 to-red-400" style={lineStyle} />}
+          </div>
+          <div className="mt-2 grid gap-2" style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))` }}>
+            {(rowLabels ?? Array(size).fill("Row prompt")).map((label, idx) => (
+              <div key={`mr-${idx}`} className="flex min-h-[48px] items-center justify-center px-2 py-1 text-center text-[10px] font-semibold uppercase tracking-wide leading-tight text-[#b8b8b8]">
+                {label}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-[900px] max-w-full">
       <div className="grid gap-2 md:grid-cols-[220px_1fr]">
@@ -83,12 +222,7 @@ export const GameBoard = ({
               </div>
             ))}
           </div>
-          <div
-            className="court-stage relative grid gap-2 p-3"
-            style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))` }}
-            role="grid"
-            aria-label="NBA Tic-Tac-Toe board"
-          >
+          <div className="court-stage relative grid gap-2 p-3" style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))` }} role="grid" aria-label="NBA Tic-Tac-Toe board">
             {board.map((value, idx) => (
               <button
                 key={idx}
@@ -102,26 +236,24 @@ export const GameBoard = ({
                 disabled={disabled || value !== null}
                 aria-label={`Cell ${idx + 1}`}
               >
-                <span className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,0.1),transparent_60%)] opacity-0 transition group-hover:opacity-100" />
-                <span className={clsx("relative z-10 transition group-active:scale-110", value === "X" ? "text-orange-300" : "text-sky-300")}>
-                  {value ?? ""}
+                <span className="relative z-10 transition group-active:scale-110">
+                  {value === "X" && <span className="material-symbols-outlined text-6xl text-blue-500">close</span>}
+                  {value === "O" && <span className="material-symbols-outlined text-6xl text-[#f97316]">circle</span>}
                 </span>
+                {cellAnswersByIndex?.[idx] && (
+                  <span className="absolute left-2 right-2 top-2 line-clamp-2 text-center text-[10px] text-white/90">
+                    {cellAnswersByIndex[idx]}
+                  </span>
+                )}
               </button>
             ))}
             {winLine && lineStyle && (
-              <div
-                className="pointer-events-none absolute h-1 origin-left animate-draw-line rounded-full bg-gradient-to-r from-orange-300 to-red-400 shadow-glowOrange"
-                style={lineStyle}
-              />
+              <div className="pointer-events-none absolute h-1 origin-left animate-draw-line rounded-full bg-gradient-to-r from-orange-300 to-red-400 shadow-glowOrange" style={lineStyle} />
             )}
           </div>
         </div>
       </div>
-      {!!usedAnswers?.length && (
-        <div className="mt-2 rounded-lg border border-white/20 bg-black/35 px-3 py-2 text-xs text-slate-100/90">
-          Used players: {usedAnswers.join(", ")}
-        </div>
-      )}
+      {!!usedAnswers?.length && <div className="mt-2 rounded-lg border border-white/20 bg-black/35 px-3 py-2 text-xs text-slate-100/90">Used players: {usedAnswers.join(", ")}</div>}
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import clsx from "clsx";
+﻿import clsx from "clsx";
 
 export const UICard = ({
   children,
@@ -6,4 +6,5 @@ export const UICard = ({
 }: {
   children: React.ReactNode;
   className?: string;
-}) => <section className={clsx("matte-panel rounded-2xl p-5", className)}>{children}</section>;
+}) => <section className={clsx("surface rounded-xl", className)}>{children}</section>;
+

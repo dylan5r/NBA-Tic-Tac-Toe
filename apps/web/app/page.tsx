@@ -1,14 +1,13 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useState } from "react";
 import { ModeCard } from "../components/ModeCard";
 import { SettingsModal } from "../components/SettingsModal";
 import { UIButton } from "../components/ui/Button";
-import { UICard } from "../components/ui/Card";
 import { UIModal } from "../components/ui/Modal";
-import { useApp } from "./providers";
 import { api } from "../lib/api";
+import { useApp } from "./providers";
 
 export default function LandingPage() {
   const { user, setUser } = useApp();
@@ -28,92 +27,106 @@ export default function LandingPage() {
   };
 
   return (
-    <main className="arena-shell mx-auto min-h-screen w-full max-w-[1400px] px-12 py-10">
-      <header className="flex items-center justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.26em] text-slate-400">Elite Arena Mode</p>
-          <h1 className="font-display text-7xl uppercase leading-none tracking-wide">NBA Tic-Tac-Toe</h1>
+    <div className="min-h-screen bg-background-light text-slate-900 dark:bg-background-dark dark:text-slate-100">
+      <nav className="sticky top-0 z-50 w-full nav-shell">
+        <div className="mx-auto flex h-20 w-full max-w-[1280px] items-center justify-between px-6">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-[#ee8c2b] p-1.5">
+              <span className="material-symbols-outlined text-2xl font-bold text-[#221910]">grid_view</span>
+            </div>
+            <h1 className="text-xl font-black uppercase tracking-tighter">NBA <span className="text-[#ee8c2b]">TIC TAC TOE</span></h1>
+          </div>
+          <div className="hidden items-center gap-10 md:flex">
+            <Link className="border-b-2 border-[#ee8c2b] pb-1 text-sm font-semibold" href="/">Play</Link>
+            <Link className="pb-1 text-sm font-semibold text-slate-400 hover:text-[#ee8c2b]" href="/leaderboard">Leaderboard</Link>
+            <Link className="pb-1 text-sm font-semibold text-slate-400 hover:text-[#ee8c2b]" href="/profile">Profile</Link>
+            <button className="pb-1 text-sm font-semibold text-slate-400 hover:text-[#ee8c2b]" onClick={() => setSettingsOpen(true)}>Settings</button>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-400 md:flex">
+              <span className="material-symbols-outlined text-base">search</span>
+              Search player...
+            </div>
+            <div className="h-10 w-10 overflow-hidden rounded-full border-2 border-[#ee8c2b] bg-[#ee8c2b]/20" />
+          </div>
         </div>
-        <button className="focusable rounded-xl border border-slate-400/40 bg-slate-900/50 px-4 py-2 text-sm uppercase tracking-widest" onClick={() => setSettingsOpen(true)}>
-          Settings
-        </button>
-      </header>
+      </nav>
 
-      <section className="mt-8 grid grid-cols-12 gap-7">
-        <UICard className="col-span-8 overflow-hidden rounded-[28px] p-9">
-          <div className="animate-slow-pan">
-            <p className="text-sm uppercase tracking-[0.2em] text-orange-300">Broadcast Arena Presentation</p>
-            <h2 className="mt-3 font-display text-7xl uppercase leading-[0.9]">Own The Board. Own The Moment.</h2>
-          </div>
-          <p className="mt-5 max-w-2xl text-slate-300">
-            Local pass-and-play, hard AI, ranked online matchmaking, and private room invites. Server-authoritative gameplay
-            with reconnection and match replay support.
-          </p>
-          <div className="mt-7 flex gap-4">
-            <Link href="/setup?mode=online_unranked">
-              <UIButton size="lg">PLAY</UIButton>
-            </Link>
-            <UIButton size="lg" variant="secondary" onClick={() => setRulesOpen(true)}>
-              Rules
-            </UIButton>
-          </div>
-        </UICard>
-
-        <UICard className="col-span-4 rounded-[28px] p-6">
-          <h3 className="font-display text-4xl uppercase tracking-wide">Player Check-In</h3>
-          {user ? (
-            <div className="mt-4 rounded-xl border border-white/20 bg-black/20 p-4">
-              <p className="font-semibold">Signed in as {user.username}</p>
-              <p className="score-led mt-1 text-sm text-orange-300">RATING {user.rating}</p>
+      <main>
+        <section className="hero-gradient relative flex min-h-[70vh] items-center justify-center px-6 py-20 text-center">
+          <div className="mx-auto max-w-4xl">
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#ee8c2b]/30 bg-[#ee8c2b]/10 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-[#ee8c2b]">
+              <span className="material-symbols-outlined text-sm">workspace_premium</span>
+              Season 4 Now Live
             </div>
-          ) : (
-            <div className="mt-4 space-y-3">
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Enter username"
-                className="focusable w-full border-0 border-b border-white/30 bg-transparent px-1 py-2 text-base outline-none transition focus:border-orange-400"
-              />
-              <UIButton onClick={createGuest} className="w-full">
-                Continue as Guest
-              </UIButton>
-              {error && <p className="text-sm text-red-300">{error}</p>}
+            <h2 className="mb-6 text-6xl font-black uppercase italic tracking-tighter text-white md:text-8xl">
+              NBA <span className="text-[#ee8c2b]">TIC TAC TOE</span>
+            </h2>
+            <p className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-slate-300 md:text-xl">
+              Test your basketball knowledge. Dominate the court in the world&apos;s most competitive NBA grid challenge.
+            </p>
+            <div className="flex flex-col justify-center gap-4 sm:flex-row">
+              <Link href="/setup?mode=online_unranked"><UIButton size="lg">Play Now</UIButton></Link>
+              <UIButton size="lg" variant="secondary" onClick={() => setRulesOpen(true)}>View Rankings</UIButton>
             </div>
-          )}
-        </UICard>
-      </section>
+          </div>
+        </section>
 
-      <section className="mt-8 grid grid-cols-4 gap-4">
-        <ModeCard title="Local" description="Pass-and-play on one browser with timers and series." href="/setup?mode=local" accent="neutral" />
-        <ModeCard title="AI" description="Easy, medium, or hard minimax opponent with delays." href="/setup?mode=ai" accent="orange" />
-        <ModeCard title="Ranked" description="Queue online and climb Elo with series wins." href="/setup?mode=online_ranked" accent="red" />
-        <ModeCard title="Private Room" description="Invite friends with room code and host controls." href="/setup?mode=private_room" accent="blue" />
-      </section>
+        <section className="mx-auto max-w-[1280px] px-6 py-16">
+          <div className="mb-12 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+            <div>
+              <h3 className="mb-2 text-3xl font-black uppercase tracking-tight">Select Game Mode</h3>
+              <p className="text-slate-500 dark:text-slate-400">Choose how you want to dominate the grid today.</p>
+            </div>
+            <button className="flex items-center gap-2 font-bold text-[#ee8c2b] hover:underline">
+              View All Modes <span className="material-symbols-outlined">arrow_forward</span>
+            </button>
+          </div>
 
-      <section className="mt-10 grid grid-cols-2 gap-6">
-        <UICard className="rounded-2xl p-5">
-          <h4 className="font-display text-4xl uppercase">How it works</h4>
-          <ol className="mt-3 space-y-2 text-sm text-slate-300">
-            <li>1. Choose mode and settings.</li>
-            <li>2. Match starts with server-authoritative turn/timer state.</li>
-            <li>3. Win rounds, take the series, gain rating in ranked.</li>
-          </ol>
-        </UICard>
-        <UICard className="rounded-2xl p-5">
-          <h4 className="font-display text-4xl uppercase">Keyboard</h4>
-          <p className="mt-3 text-sm text-slate-300">
-            Use `Tab` to focus controls, `Enter` to confirm, and number keys `1-9` for fast moves on 3x3 boards.
-          </p>
-        </UICard>
-      </section>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <ModeCard title="Local Play" description="Challenge a friend sitting right next to you." href="/setup?mode=local" accent="neutral" />
+            <ModeCard title="AI Challenge" description="Sharpen your skills against NBA AI." href="/setup?mode=ai" accent="orange" />
+            <ModeCard title="Ranked Match" description="Climb global leaderboards with Elo." href="/setup?mode=online_ranked" accent="red" />
+            <ModeCard title="Private Room" description="Create a lobby and invite with code." href="/setup?mode=private_room" accent="blue" />
+          </div>
+
+          <div className="mt-8 rounded-xl border border-white/10 bg-white/5 p-6">
+            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[#ee8c2b]">Quick Login</p>
+            {user ? (
+              <p className="text-sm">Signed in as <span className="font-bold">{user.username}</span> • Elo {user.rating}</p>
+            ) : (
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Enter username"
+                  className="focusable w-full rounded-lg border border-white/20 bg-black/30 px-3 py-3 text-sm"
+                />
+                <UIButton onClick={createGuest}>Continue</UIButton>
+              </div>
+            )}
+            {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+          </div>
+        </section>
+      </main>
+
+      <footer className="border-t border-white/10 bg-white/5 py-8">
+        <div className="mx-auto flex max-w-[1280px] flex-col items-center justify-between gap-4 px-6 text-xs uppercase tracking-[0.2em] text-slate-500 md:flex-row">
+          <p>© 2024 NBA Tic Tac Toe Challenge</p>
+          <div className="flex items-center gap-6">
+            <a className="hover:text-[#ee8c2b]" href="#">Terms</a>
+            <a className="hover:text-[#ee8c2b]" href="#">Privacy</a>
+            <a className="hover:text-[#ee8c2b]" href="#">Contact</a>
+          </div>
+        </div>
+      </footer>
 
       <UIModal open={rulesOpen} onClose={() => setRulesOpen(false)} title="Arena Rules">
-        <p className="text-sm text-slate-300">
-          Standard tic-tac-toe. First to align three (or four in 4x4 variant) wins the round. Timeout forfeits the round.
-          Series winner is first to the configured round target.
-        </p>
+        <p className="text-sm text-slate-300">Win by completing lines while answering NBA prompt intersections correctly.</p>
       </UIModal>
+
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-    </main>
+    </div>
   );
 }
+

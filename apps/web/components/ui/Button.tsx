@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import clsx from "clsx";
 
@@ -11,23 +11,19 @@ export const UIButton = ({
   variant = "primary",
   size = "md",
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) => {
-  return (
-    <button
-      {...props}
-      className={clsx(
-        "focusable btn-shimmer rounded-xl border font-display uppercase tracking-[0.12em] transition duration-200 ease-out active:scale-[0.98]",
-        size === "lg" ? "px-7 py-3 text-lg" : "px-4 py-2 text-sm",
-        variant === "primary" &&
-          "border-orange-300/50 bg-gradient-to-b from-orange-400 to-orange-600 text-black shadow-glowOrange hover:brightness-110",
-        variant === "secondary" &&
-          "border-sky-300/40 bg-gradient-to-b from-slate-700 to-slate-900 text-slate-100 shadow-glowBlue hover:border-sky-300/75",
-        variant === "danger" &&
-          "border-rose-300/45 bg-gradient-to-b from-rose-500 to-rose-700 text-white shadow-[0_0_0_1px_rgba(255,80,95,0.45),0_0_16px_rgba(255,62,73,0.35)] hover:brightness-110",
-        className
-      )}
-    >
-      {children}
-    </button>
-  );
-};
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) => (
+  <button
+    {...props}
+    className={clsx(
+      "focusable inline-flex items-center justify-center rounded-lg font-bold uppercase tracking-tight transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-50",
+      size === "lg" ? "px-10 py-4 text-lg" : "px-4 py-2 text-sm",
+      variant === "primary" && "bg-[#ee8c2b] text-[#221910] hover:bg-[#da7d22]",
+      variant === "secondary" && "bg-white/10 border border-white/20 text-white hover:bg-white/15",
+      variant === "danger" && "bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20",
+      className
+    )}
+  >
+    {children}
+  </button>
+);
+

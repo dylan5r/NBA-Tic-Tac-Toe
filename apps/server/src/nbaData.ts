@@ -46,6 +46,30 @@ interface PlayerFacts {
   };
 }
 
+interface NbaCachePayload {
+  version: number;
+  fingerprint: string;
+  players: Array<{
+    key: string;
+    name: string;
+    teams: string[];
+    teamNames: string[];
+    years: number[];
+    gameTypes: string[];
+    teammates: string[];
+    teamYears: string[];
+    seasons: Array<[number, PlayerSeasonTotals]>;
+    maxPointsGame: number;
+    draftYear?: number;
+    draftRound?: number;
+    draftNumber?: number;
+    draftedBy?: string;
+    flags: PlayerFacts["flags"];
+  }>;
+}
+
+const CACHE_VERSION = 3;
+
 export interface GeneratedPrompt {
   id: string;
   type: NbaPrompt["type"];
@@ -67,6 +91,14 @@ const normalize = (s: string): string =>
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "");
+
+const normalizePersonKey = (value: string | undefined): string => {
+  const raw = (value ?? "").trim();
+  if (!raw) return "";
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric)) return String(Math.trunc(numeric));
+  return raw;
+};
 
 const parseCsvLine = (line: string): string[] => {
   const out: string[] = [];
@@ -131,6 +163,22 @@ const teamNameToCode: Record<string, string> = {
   sixers: "PHI"
 };
 
+const legacyTeamCodeToModern: Record<string, string> = {
+  NJN: "BKN",
+  SEA: "OKC",
+  NOH: "NOP",
+  NOK: "NOP",
+  CHH: "CHA",
+  WSB: "WAS",
+  VAN: "MEM"
+};
+
+const normalizeTeamCode = (value: string | undefined): string => {
+  const raw = (value ?? "").trim().toUpperCase();
+  if (!raw) return "";
+  return legacyTeamCodeToModern[raw] ?? raw;
+};
+
 const curatedFlags: Record<string, PlayerFacts["flags"]> = {
   lebronjames: { champion: true, mvp: true, allStar: true, finalsMvp: true, allNba: true, olympicGold: true, scoringChampion: true, championships: 4 },
   michaeljordan: { champion: true, mvp: true, allStar: true, finalsMvp: true, dpoy: true, allNba: true, olympicGold: true, scoringChampion: true, championships: 6 },
@@ -161,6 +209,12 @@ const dataDirCandidates = (cwd: string) => [
   path.resolve(cwd, "../../nbadata"),
   path.resolve(cwd, "../nbadata"),
   path.resolve(cwd, "nbadata"),
+  path.resolve(cwd, "../../nba_data"),
+  path.resolve(cwd, "../nba_data"),
+  path.resolve(cwd, "nba_data"),
+  path.resolve(cwd, "../../nba_data/csv"),
+  path.resolve(cwd, "../nba_data/csv"),
+  path.resolve(cwd, "nba_data/csv"),
   path.resolve(cwd, "../../nba data"),
   path.resolve(cwd, "../nba data"),
   path.resolve(cwd, "nba data")
@@ -186,9 +240,107 @@ class NbaDataService {
       return;
     }
 
-    const playersPath = path.join(dataDir, "Players.csv");
-    const statsPath = path.join(dataDir, "PlayerStatistics.csv");
-    if (!fs.existsSync(playersPath) || !fs.existsSync(statsPath)) {
+    const rootDir = path.basename(dataDir).toLowerCase() === "csv" ? path.dirname(dataDir) : dataDir;
+
+    const bbrefPerGamePath = this.firstExistingPath(rootDir, ["Player Per Game.csv"]);
+    const bbrefSeasonInfoPath = this.firstExistingPath(rootDir, ["Player Season Info.csv"]);
+    const bbrefCareerInfoPath = this.firstExistingPath(rootDir, ["Player Career Info.csv"]);
+    const bbrefAllStarPath = this.firstExistingPath(rootDir, ["All-Star Selections.csv"]);
+    const bbrefDraftPath = this.firstExistingPath(rootDir, ["Draft Pick History.csv"]);
+    const bbrefAwardSharesPath = this.firstExistingPath(rootDir, ["Player Award Shares.csv"]);
+    const bbrefAllNbaPath = this.firstExistingPath(rootDir, ["End of Season Teams.csv"]);
+
+    if (bbrefPerGamePath && bbrefSeasonInfoPath && bbrefCareerInfoPath) {
+      const sourceFiles = [
+        bbrefPerGamePath,
+        bbrefSeasonInfoPath,
+        bbrefCareerInfoPath,
+        bbrefAllStarPath,
+        bbrefDraftPath,
+        bbrefAwardSharesPath,
+        bbrefAllNbaPath
+      ].filter((x): x is string => Boolean(x));
+      const cachePath = path.join(rootDir, ".nba-player-cache.bbref.v1.json");
+      const fingerprint = this.computeFingerprint(sourceFiles);
+      const restored = this.restoreFromCache(cachePath, fingerprint);
+      if (restored) {
+        this.buildPromptEngine();
+        this.ready = true;
+        return;
+      }
+
+      await this.loadBbrefCareerInfo(bbrefCareerInfoPath);
+      await this.loadBbrefSeasonInfo(bbrefSeasonInfoPath);
+      await this.loadBbrefPerGame(bbrefPerGamePath);
+      this.augmentMaxPointsFromLegacyCache(path.join(rootDir, "csv", ".nba-player-cache.v1.json"));
+      if (bbrefDraftPath) await this.loadBbrefDraftHistory(bbrefDraftPath);
+      if (bbrefAllStarPath) await this.loadBbrefAllStar(bbrefAllStarPath);
+      if (bbrefAwardSharesPath) await this.loadBbrefAwardShares(bbrefAwardSharesPath);
+      if (bbrefAllNbaPath) await this.loadBbrefEndSeasonTeams(bbrefAllNbaPath);
+
+      this.linkTeammatesFromTeamYears();
+      this.attachCuratedFlags();
+      this.writeCache(cachePath, fingerprint);
+      this.buildPromptEngine();
+      this.ready = true;
+      return;
+    }
+
+    const playersPath = this.firstExistingPath(dataDir, ["Players.csv"]);
+    const statsPath = this.firstExistingPath(dataDir, ["PlayerStatistics.csv", "PlayerStatisticsScoring.csv"]);
+    const altPlayersPath = this.firstExistingPath(dataDir, ["player.csv"]);
+    const commonInfoPath = this.firstExistingPath(dataDir, ["common_player_info.csv"]);
+    const draftHistoryPath = this.firstExistingPath(dataDir, ["draft_history.csv"]);
+    const gamePath = this.firstExistingPath(dataDir, ["game.csv"]);
+    const playByPlayPath = this.firstExistingPath(dataDir, ["play_by_play.csv"]);
+
+    if (playersPath && statsPath) {
+      await this.loadPlayers(playersPath);
+      await this.loadStats(statsPath);
+      if (draftHistoryPath) {
+        await this.loadDraftHistory(draftHistoryPath);
+      }
+      this.attachCuratedFlags();
+      this.buildPromptEngine();
+      this.ready = true;
+      return;
+    }
+
+    if (altPlayersPath || commonInfoPath) {
+      const sourceFiles = [altPlayersPath, commonInfoPath, draftHistoryPath, gamePath, playByPlayPath].filter(
+        (x): x is string => Boolean(x)
+      );
+      const cachePath = path.join(dataDir, ".nba-player-cache.v1.json");
+      const fingerprint = this.computeFingerprint(sourceFiles);
+      const restored = this.restoreFromCache(cachePath, fingerprint);
+      if (restored) {
+        this.buildPromptEngine();
+        this.ready = true;
+        return;
+      }
+
+      if (altPlayersPath) {
+        await this.loadSimplePlayers(altPlayersPath);
+      }
+      if (commonInfoPath) {
+        await this.loadCommonPlayerInfo(commonInfoPath);
+      }
+      if (draftHistoryPath) {
+        await this.loadDraftHistory(draftHistoryPath);
+      }
+      if (playByPlayPath) {
+        const gameMetaById = gamePath ? await this.loadGameMeta(gamePath) : new Map<string, { seasonType: string; year?: number }>();
+        await this.loadPlayByPlay(playByPlayPath, gameMetaById);
+      }
+      this.linkTeammatesFromTeamYears();
+      this.attachCuratedFlags();
+      this.writeCache(cachePath, fingerprint);
+      this.buildPromptEngine();
+      this.ready = true;
+      return;
+    }
+
+    if (!playersPath || !statsPath) {
       this.seedFallbackPlayers();
       this.buildPromptEngine();
       this.ready = true;
@@ -200,6 +352,117 @@ class NbaDataService {
     this.attachCuratedFlags();
     this.buildPromptEngine();
     this.ready = true;
+  }
+
+  private firstExistingPath(baseDir: string, fileNames: string[]): string | null {
+    for (const name of fileNames) {
+      const full = path.join(baseDir, name);
+      if (fs.existsSync(full)) return full;
+    }
+    return null;
+  }
+
+  private computeFingerprint(files: string[]): string {
+    return files
+      .map((file) => {
+        try {
+          const stat = fs.statSync(file);
+          return `${file}|${stat.size}|${stat.mtimeMs}`;
+        } catch {
+          return `${file}|missing`;
+        }
+      })
+      .join("||");
+  }
+
+  private restoreFromCache(cachePath: string, fingerprint: string): boolean {
+    try {
+      if (!fs.existsSync(cachePath)) return false;
+      const raw = fs.readFileSync(cachePath, "utf8");
+      const parsed = JSON.parse(raw) as NbaCachePayload;
+      if (parsed.version !== CACHE_VERSION || parsed.fingerprint !== fingerprint || !Array.isArray(parsed.players)) return false;
+
+      this.players.clear();
+      this.byName.clear();
+
+      for (const entry of parsed.players) {
+        const p: PlayerFacts = {
+          key: entry.key,
+          name: entry.name,
+          teams: new Set(entry.teams),
+          teamNames: new Set(entry.teamNames),
+          years: new Set(entry.years),
+          gameTypes: new Set(entry.gameTypes),
+          teammates: new Set(entry.teammates),
+          teamYears: new Set(entry.teamYears),
+          seasons: new Map(entry.seasons),
+          maxPointsGame: entry.maxPointsGame,
+          draftYear: entry.draftYear,
+          draftRound: entry.draftRound,
+          draftNumber: entry.draftNumber,
+          draftedBy: entry.draftedBy,
+          flags: entry.flags ?? {}
+        };
+        this.players.set(p.key, p);
+        this.byName.set(normalize(p.name), p);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private writeCache(cachePath: string, fingerprint: string) {
+    try {
+      const payload: NbaCachePayload = {
+        version: CACHE_VERSION,
+        fingerprint,
+        players: [...this.players.values()].map((p) => ({
+          key: p.key,
+          name: p.name,
+          teams: [...p.teams],
+          teamNames: [...p.teamNames],
+          years: [...p.years],
+          gameTypes: [...p.gameTypes],
+          teammates: [...p.teammates],
+          teamYears: [...p.teamYears],
+          seasons: [...p.seasons.entries()],
+          maxPointsGame: p.maxPointsGame,
+          draftYear: p.draftYear,
+          draftRound: p.draftRound,
+          draftNumber: p.draftNumber,
+          draftedBy: p.draftedBy,
+          flags: p.flags
+        }))
+      };
+      fs.writeFileSync(cachePath, JSON.stringify(payload));
+    } catch {
+      // Cache is an optimization only; ignore write failures.
+    }
+  }
+
+  private getOrCreatePlayer(key: string, fallbackName = ""): PlayerFacts {
+    const existing = this.players.get(key);
+    if (existing) {
+      if (fallbackName && !existing.name) existing.name = fallbackName;
+      return existing;
+    }
+    const created: PlayerFacts = {
+      key,
+      name: fallbackName,
+      teams: new Set<string>(),
+      teamNames: new Set<string>(),
+      years: new Set<number>(),
+      gameTypes: new Set<string>(),
+      teammates: new Set<string>(),
+      teamYears: new Set<string>(),
+      seasons: new Map<number, PlayerSeasonTotals>(),
+      maxPointsGame: 0,
+      flags: {}
+    };
+    this.players.set(key, created);
+    if (fallbackName) this.byName.set(normalize(fallbackName), created);
+    return created;
   }
 
   isReady() {
@@ -215,10 +478,8 @@ class NbaDataService {
 
   challengesForGrid(params: { size: 3 | 4; ranked: boolean }): { rows: GeneratedPrompt[]; cols: GeneratedPrompt[] } {
     const count = params.size;
-    const pool = this.generateBalancedBoard(count * 2, params.ranked ? "ranked" : "casual");
-    const rows = pool.slice(0, count);
-    const cols = pool.slice(count, count * 2);
-    this.trackBoard(pool.map((p) => p.id));
+    const { rows, cols } = this.generateBalancedGrid(count, params.ranked ? "ranked" : "casual", 5);
+    this.trackBoard([...rows, ...cols].map((p) => p.id));
     return { rows, cols };
   }
 
@@ -341,6 +602,131 @@ class NbaDataService {
       .slice(0, cellCount);
   }
 
+  private generateBalancedGrid(side: 3 | 4, profile: "casual" | "ranked", minIntersection: number): { rows: GeneratedPrompt[]; cols: GeneratedPrompt[] } {
+    const target = side * 2;
+    const pool = this.prompts.filter((p) => (this.candidatesByPrompt.get(p.id)?.size ?? 0) >= minIntersection);
+    const recent = new Set(this.recentPromptIds);
+    const avoidLastBoards = new Set(this.recentBoards.flat());
+    const filtered = pool.filter((p) => !recent.has(p.id) && !avoidLastBoards.has(p.id));
+    const source = filtered.length >= target ? filtered : pool;
+
+    for (let attempt = 0; attempt < 1000; attempt += 1) {
+      const selected: GeneratedPrompt[] = [];
+      while (selected.length < target) {
+        const candidate = this.weightedPick(source, profile);
+        if (!candidate) break;
+        if (selected.some((s) => s.id === candidate.id)) continue;
+        selected.push(candidate);
+      }
+      if (selected.length !== target) continue;
+      const rows = selected.slice(0, side);
+      const cols = selected.slice(side, target);
+      if (this.gridMeetsMinimumIntersections(rows, cols, minIntersection)) return { rows, cols };
+    }
+
+    const byPopulation = source
+      .slice()
+      .sort((a, b) => (this.candidatesByPrompt.get(b.id)?.size ?? 0) - (this.candidatesByPrompt.get(a.id)?.size ?? 0));
+
+    for (let attempt = 0; attempt < 300; attempt += 1) {
+      const rows = this.shuffle(byPopulation).slice(0, side);
+      if (rows.length !== side) continue;
+      const cols: GeneratedPrompt[] = [];
+      for (const candidate of byPopulation) {
+        if (rows.some((r) => r.id === candidate.id) || cols.some((c) => c.id === candidate.id)) continue;
+        if (!rows.every((r) => this.intersectionSize(r.id, candidate.id) >= minIntersection)) continue;
+        cols.push(candidate);
+        if (cols.length === side) break;
+      }
+      if (cols.length === side && this.gridMeetsMinimumIntersections(rows, cols, minIntersection)) {
+        return { rows, cols };
+      }
+    }
+
+    const strict = this.generateStrictGridFromTop(side, byPopulation, minIntersection);
+    if (strict) return strict;
+
+    // Last-resort safety: keep the game playable instead of returning impossible cells.
+    // If the dataset is too constrained, return the highest-population prompts.
+    return { rows: byPopulation.slice(0, side), cols: byPopulation.slice(side, target) };
+  }
+
+  private generateStrictGridFromTop(
+    side: 3 | 4,
+    sortedPrompts: GeneratedPrompt[],
+    minIntersection: number
+  ): { rows: GeneratedPrompt[]; cols: GeneratedPrompt[] } | null {
+    const rowsPool = sortedPrompts.slice(0, Math.min(24, sortedPrompts.length));
+
+    const buildCols = (rows: GeneratedPrompt[]): GeneratedPrompt[] | null => {
+      const cols: GeneratedPrompt[] = [];
+      for (const candidate of sortedPrompts) {
+        if (rows.some((r) => r.id === candidate.id) || cols.some((c) => c.id === candidate.id)) continue;
+        if (!rows.every((r) => this.intersectionSize(r.id, candidate.id) >= minIntersection)) continue;
+        cols.push(candidate);
+        if (cols.length === side) return cols;
+      }
+      return null;
+    };
+
+    if (side === 3) {
+      for (let a = 0; a < rowsPool.length; a += 1) {
+        for (let b = a + 1; b < rowsPool.length; b += 1) {
+          for (let c = b + 1; c < rowsPool.length; c += 1) {
+            const rows = [rowsPool[a]!, rowsPool[b]!, rowsPool[c]!];
+            const cols = buildCols(rows);
+            if (cols && this.gridMeetsMinimumIntersections(rows, cols, minIntersection)) return { rows, cols };
+          }
+        }
+      }
+      return null;
+    }
+
+    for (let a = 0; a < rowsPool.length; a += 1) {
+      for (let b = a + 1; b < rowsPool.length; b += 1) {
+        for (let c = b + 1; c < rowsPool.length; c += 1) {
+          for (let d = c + 1; d < rowsPool.length; d += 1) {
+            const rows = [rowsPool[a]!, rowsPool[b]!, rowsPool[c]!, rowsPool[d]!];
+            const cols = buildCols(rows);
+            if (cols && this.gridMeetsMinimumIntersections(rows, cols, minIntersection)) return { rows, cols };
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  private gridMeetsMinimumIntersections(rows: GeneratedPrompt[], cols: GeneratedPrompt[], minIntersection: number): boolean {
+    if (!rows.length || !cols.length) return false;
+    for (const row of rows) {
+      for (const col of cols) {
+        if (this.intersectionSize(row.id, col.id) < minIntersection) return false;
+      }
+    }
+    return true;
+  }
+
+  private intersectionSize(aId: string, bId: string): number {
+    const a = this.candidatesByPrompt.get(aId);
+    const b = this.candidatesByPrompt.get(bId);
+    if (!a || !b) return 0;
+    const [small, big] = a.size <= b.size ? [a, b] : [b, a];
+    let count = 0;
+    for (const key of small) {
+      if (big.has(key)) count += 1;
+    }
+    return count;
+  }
+
+  private shuffle<T>(arr: T[]): T[] {
+    const out = arr.slice();
+    for (let i = out.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [out[i], out[j]] = [out[j]!, out[i]!];
+    }
+    return out;
+  }
+
   private weightedPick(pool: GeneratedPrompt[], profile: "casual" | "ranked"): GeneratedPrompt | null {
     const weights = difficultyProfile[profile];
     const weighted = pool.map((p) => ({ p, w: p.weight * weights[p.difficulty] }));
@@ -453,6 +839,11 @@ class NbaDataService {
   }
 
   private matchesValidation(facts: PlayerFacts, validation: PromptValidation): boolean {
+    const currentYear = new Date().getUTCFullYear();
+    const recentCutoffYear = currentYear - 10;
+    const hasRecentSeason = [...facts.years].some((y) => y >= recentCutoffYear);
+    if (!hasRecentSeason) return false;
+
     const seasonEntries = [...facts.seasons.values()];
     const maxPointsGame = facts.maxPointsGame;
     const bestPpg = seasonEntries.length ? Math.max(...seasonEntries.map((s) => s.points / Math.max(1, s.games))) : 0;
@@ -555,20 +946,8 @@ class NbaDataService {
       });
       const full = `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim();
       if (!full) continue;
-      const key = row.personId || normalize(full);
-      const p = this.players.get(key) ?? {
-        key,
-        name: full,
-        teams: new Set<string>(),
-        teamNames: new Set<string>(),
-        years: new Set<number>(),
-        gameTypes: new Set<string>(),
-        teammates: new Set<string>(),
-        teamYears: new Set<string>(),
-        seasons: new Map<number, PlayerSeasonTotals>(),
-        maxPointsGame: 0,
-        flags: {}
-      };
+      const key = normalizePersonKey(row.personId) || normalize(full);
+      const p = this.getOrCreatePlayer(key, full);
       p.name = full;
       const draftYear = Number(row.draftYear);
       const draftRound = Number(row.draftRound);
@@ -595,25 +974,15 @@ class NbaDataService {
       headers.forEach((h, i) => {
         row[h] = cols[i] ?? "";
       });
-      const key = row.personId || normalize(`${row.firstName ?? ""} ${row.lastName ?? ""}`);
+      const key = normalizePersonKey(row.personId) || normalize(`${row.firstName ?? ""} ${row.lastName ?? ""}`);
       const full = `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim();
       if (!key || !full) continue;
-      const p = this.players.get(key) ?? {
-        key,
-        name: full,
-        teams: new Set<string>(),
-        teamNames: new Set<string>(),
-        years: new Set<number>(),
-        gameTypes: new Set<string>(),
-        teammates: new Set<string>(),
-        teamYears: new Set<string>(),
-        seasons: new Map<number, PlayerSeasonTotals>(),
-        maxPointsGame: 0,
-        flags: {}
-      };
+      const p = this.getOrCreatePlayer(key, full);
       p.name = full;
 
-      const teamCode = (row.teamAbbreviation ?? teamNameToCode[normalize(row.playerteamName ?? row.teamName ?? "")] ?? "").trim().toUpperCase();
+      const teamCode = normalizeTeamCode(
+        (row.teamAbbreviation ?? teamNameToCode[normalize(row.playerteamName ?? row.teamName ?? "")] ?? "").trim().toUpperCase()
+      );
       const teamName = (row.playerteamName ?? row.teamName ?? "").trim();
       if (teamCode) p.teams.add(teamCode);
       if (teamName) p.teamNames.add(teamName);
@@ -655,6 +1024,565 @@ class NbaDataService {
       this.byName.set(normalize(full), p);
     }
     this.linkTeammatesFromTeamYears();
+  }
+
+  private async loadSimplePlayers(filePath: string) {
+    const file = readline.createInterface({ input: fs.createReadStream(filePath) });
+    let headers: string[] = [];
+    for await (const line of file) {
+      if (!headers.length) {
+        headers = parseCsvLine(line);
+        continue;
+      }
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = cols[i] ?? "";
+      });
+      const full = (row.full_name ?? `${row.first_name ?? ""} ${row.last_name ?? ""}`).trim();
+      if (!full) continue;
+      const key = normalizePersonKey(row.id) || normalize(full);
+      const p = this.getOrCreatePlayer(key, full);
+      p.name = full;
+      this.players.set(key, p);
+      this.byName.set(normalize(full), p);
+    }
+  }
+
+  private async loadCommonPlayerInfo(filePath: string) {
+    const file = readline.createInterface({ input: fs.createReadStream(filePath) });
+    let headers: string[] = [];
+    for await (const line of file) {
+      if (!headers.length) {
+        headers = parseCsvLine(line);
+        continue;
+      }
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = cols[i] ?? "";
+      });
+
+      const full = `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim() || (row.display_first_last ?? "").trim();
+      if (!full) continue;
+      const key = normalizePersonKey(row.person_id) || normalize(full);
+      const p = this.getOrCreatePlayer(key, full);
+      p.name = full;
+
+      const draftYear = Number.parseInt((row.draft_year ?? "").split(".")[0] ?? "", 10);
+      const draftRound = Number.parseInt((row.draft_round ?? "").split(".")[0] ?? "", 10);
+      const draftNumber = Number.parseInt((row.draft_number ?? "").split(".")[0] ?? "", 10);
+      if (Number.isFinite(draftYear) && draftYear > 0) p.draftYear = draftYear;
+      if (Number.isFinite(draftRound) && draftRound > 0) p.draftRound = draftRound;
+      if (Number.isFinite(draftNumber) && draftNumber > 0) p.draftNumber = draftNumber;
+
+      const modernTeamCode = normalizeTeamCode(row.team_abbreviation ?? "");
+      if (modernTeamCode) p.teams.add(modernTeamCode);
+      const teamName = (row.team_name ?? "").trim();
+      if (teamName) p.teamNames.add(teamName);
+      if (!p.draftedBy && modernTeamCode) p.draftedBy = modernTeamCode;
+
+      const fromYear = Number.parseInt((row.from_year ?? "").split(".")[0] ?? "", 10);
+      const toYear = Number.parseInt((row.to_year ?? "").split(".")[0] ?? "", 10);
+      if (Number.isFinite(fromYear) && Number.isFinite(toYear) && fromYear > 0 && toYear >= fromYear) {
+        for (let year = fromYear; year <= toYear; year += 1) {
+          p.years.add(year);
+          if (modernTeamCode) p.teamYears.add(`${modernTeamCode}|${year}`);
+        }
+      }
+
+      this.players.set(key, p);
+      this.byName.set(normalize(full), p);
+    }
+  }
+
+  private async loadDraftHistory(filePath: string) {
+    const file = readline.createInterface({ input: fs.createReadStream(filePath) });
+    let headers: string[] = [];
+    for await (const line of file) {
+      if (!headers.length) {
+        headers = parseCsvLine(line);
+        continue;
+      }
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = cols[i] ?? "";
+      });
+
+      const key = normalizePersonKey(row.person_id);
+      const full = (row.player_name ?? "").trim();
+      if (!key || !full) continue;
+      const p = this.getOrCreatePlayer(key, full);
+      p.name = full;
+
+      const draftYear = Number.parseInt(row.season ?? "", 10);
+      const draftRound = Number.parseInt(row.round_number ?? "", 10);
+      const draftNumber = Number.parseInt(row.overall_pick ?? "", 10);
+      if (Number.isFinite(draftYear) && draftYear > 0) p.draftYear = draftYear;
+      if (Number.isFinite(draftRound) && draftRound > 0) p.draftRound = draftRound;
+      if (Number.isFinite(draftNumber) && draftNumber > 0) p.draftNumber = draftNumber;
+
+      const draftedBy = normalizeTeamCode(row.team_abbreviation ?? "");
+      if (draftedBy) p.draftedBy = draftedBy;
+      this.byName.set(normalize(full), p);
+    }
+  }
+
+  private async loadGameMeta(filePath: string): Promise<Map<string, { seasonType: string; year?: number }>> {
+    const map = new Map<string, { seasonType: string; year?: number }>();
+    const file = readline.createInterface({ input: fs.createReadStream(filePath) });
+    let headers: string[] = [];
+    for await (const line of file) {
+      if (!headers.length) {
+        headers = parseCsvLine(line);
+        continue;
+      }
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = cols[i] ?? "";
+      });
+      const gameId = (row.game_id ?? "").trim();
+      if (!gameId) continue;
+      const seasonType = (row.season_type ?? "").trim() || "Regular Season";
+      const date = new Date(row.game_date ?? "");
+      const year = Number.isNaN(date.getTime()) ? undefined : date.getUTCFullYear();
+      if (!map.has(gameId)) map.set(gameId, { seasonType, year });
+    }
+    return map;
+  }
+
+  private isThreePointerMade(row: Record<string, string>): boolean {
+    const text = `${row.homedescription ?? ""} ${row.visitordescription ?? ""}`.toUpperCase();
+    return text.includes("3PT");
+  }
+
+  private isMissEvent(row: Record<string, string>): boolean {
+    const text = `${row.homedescription ?? ""} ${row.visitordescription ?? ""} ${row.neutraldescription ?? ""}`.toUpperCase();
+    return text.includes("MISS");
+  }
+
+  private async loadPlayByPlay(playByPlayPath: string, gameMetaById: Map<string, { seasonType: string; year?: number }>) {
+    const file = readline.createInterface({ input: fs.createReadStream(playByPlayPath) });
+    let headers: string[] = [];
+    const seenGamesByPlayerSeason = new Set<string>();
+    const pointsByPlayerGame = new Map<string, number>();
+    const seenEvents = new Set<string>();
+
+    for await (const line of file) {
+      if (!headers.length) {
+        headers = parseCsvLine(line);
+        continue;
+      }
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = cols[i] ?? "";
+      });
+
+      const eventType = Number.parseInt(row.eventmsgtype ?? "", 10);
+      const gameId = (row.game_id ?? "").trim();
+      if (!gameId || !Number.isFinite(eventType)) continue;
+      const eventNum = Number.parseInt(row.eventnum ?? "", 10);
+      if (Number.isFinite(eventNum)) {
+        const eventKey = `${gameId}|${eventNum}`;
+        if (seenEvents.has(eventKey)) continue;
+        seenEvents.add(eventKey);
+      }
+
+      const meta = gameMetaById.get(gameId);
+      const year = meta?.year;
+      const seasonType = meta?.seasonType ?? "Regular Season";
+      const isTrackedNbaGame = seasonType === "Regular Season" || seasonType === "Playoffs";
+
+      const player1Key = normalizePersonKey(row.player1_id ?? "");
+      const player2Key = normalizePersonKey(row.player2_id ?? "");
+      const player1Name = (row.player1_name ?? "").trim();
+      const player2Name = (row.player2_name ?? "").trim();
+      const player1Team = normalizeTeamCode(row.player1_team_abbreviation ?? "");
+      const player2Team = normalizeTeamCode(row.player2_team_abbreviation ?? "");
+
+      const attachParticipation = (key: string, name: string, teamCode: string) => {
+        if (!key || !name) return;
+        const p = this.getOrCreatePlayer(key, name);
+        p.name = name;
+        this.byName.set(normalize(name), p);
+        if (isTrackedNbaGame && teamCode) p.teams.add(teamCode);
+        if (year !== undefined) {
+          p.years.add(year);
+          if (isTrackedNbaGame && teamCode) p.teamYears.add(`${teamCode}|${year}`);
+        }
+        if (seasonType) p.gameTypes.add(seasonType);
+        if (seasonType.toUpperCase().includes("ALL STAR")) p.flags.allStar = true;
+      };
+
+      attachParticipation(player1Key, player1Name, player1Team);
+      attachParticipation(player2Key, player2Name, player2Team);
+
+      if (isTrackedNbaGame && year !== undefined) {
+        const markGameSeen = (key: string) => {
+          if (!key) return;
+          const player = this.players.get(key);
+          if (!player) return;
+          const gameSeenKey = `${key}|${year}|${gameId}`;
+          if (seenGamesByPlayerSeason.has(gameSeenKey)) return;
+          seenGamesByPlayerSeason.add(gameSeenKey);
+          const season = player.seasons.get(year) ?? { games: 0, points: 0, assists: 0, rebounds: 0, threePm: 0, threePa: 0 };
+          season.games += 1;
+          player.seasons.set(year, season);
+        };
+        markGameSeen(player1Key);
+        markGameSeen(player2Key);
+      }
+
+      if ((eventType === 1 || eventType === 3) && isTrackedNbaGame) {
+        if (!player1Key) continue;
+        const shooter = this.players.get(player1Key);
+        if (!shooter) continue;
+        const pts = eventType === 1 ? (this.isThreePointerMade(row) ? 3 : 2) : this.isMissEvent(row) ? 0 : 1;
+        if (pts > 0) {
+          if (year !== undefined) {
+            const season = shooter.seasons.get(year) ?? { games: 0, points: 0, assists: 0, rebounds: 0, threePm: 0, threePa: 0 };
+            season.points += pts;
+            if (eventType === 1 && this.isThreePointerMade(row)) {
+              season.threePm += 1;
+              season.threePa += 1;
+            }
+            shooter.seasons.set(year, season);
+          }
+          const pgKey = `${player1Key}|${gameId}`;
+          const prior = pointsByPlayerGame.get(pgKey) ?? 0;
+          const now = prior + pts;
+          pointsByPlayerGame.set(pgKey, now);
+          shooter.maxPointsGame = Math.max(shooter.maxPointsGame, now);
+        }
+      }
+
+      if (eventType === 2) {
+        if (!isTrackedNbaGame || !player1Key || year === undefined) continue;
+        if (!this.isThreePointerMade(row)) continue;
+        const shooter = this.players.get(player1Key);
+        if (!shooter) continue;
+        const season = shooter.seasons.get(year) ?? { games: 0, points: 0, assists: 0, rebounds: 0, threePm: 0, threePa: 0 };
+        season.threePa += 1;
+        shooter.seasons.set(year, season);
+      }
+
+      if (eventType === 4) {
+        if (!isTrackedNbaGame || !player1Key || year === undefined) continue;
+        const rebounder = this.players.get(player1Key);
+        if (!rebounder) continue;
+        const season = rebounder.seasons.get(year) ?? { games: 0, points: 0, assists: 0, rebounds: 0, threePm: 0, threePa: 0 };
+        season.rebounds += 1;
+        rebounder.seasons.set(year, season);
+      }
+
+      if (eventType === 1 && isTrackedNbaGame && player2Key && year !== undefined) {
+        const assister = this.players.get(player2Key);
+        if (!assister) continue;
+        const season = assister.seasons.get(year) ?? { games: 0, points: 0, assists: 0, rebounds: 0, threePm: 0, threePa: 0 };
+        season.assists += 1;
+        assister.seasons.set(year, season);
+      }
+    }
+  }
+
+  private async loadBbrefCareerInfo(filePath: string) {
+    const file = readline.createInterface({ input: fs.createReadStream(filePath) });
+    let headers: string[] = [];
+    for await (const line of file) {
+      if (!headers.length) {
+        headers = parseCsvLine(line);
+        continue;
+      }
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = cols[i] ?? "";
+      });
+      const key = (row.player_id ?? "").trim();
+      const name = (row.player ?? "").trim();
+      if (!key || !name) continue;
+      const p = this.getOrCreatePlayer(key, name);
+      p.name = name;
+      this.byName.set(normalize(name), p);
+
+      const fromYear = Number.parseInt(row.from ?? "", 10);
+      const toYear = Number.parseInt(row.to ?? "", 10);
+      if (Number.isFinite(fromYear) && Number.isFinite(toYear) && fromYear > 0 && toYear >= fromYear) {
+        for (let year = fromYear; year <= toYear; year += 1) {
+          p.years.add(year);
+        }
+      }
+
+      const hof = (row.hof ?? "").trim().toUpperCase();
+      if (hof === "TRUE") p.flags.hof = true;
+    }
+  }
+
+  private async loadBbrefSeasonInfo(filePath: string) {
+    const file = readline.createInterface({ input: fs.createReadStream(filePath) });
+    let headers: string[] = [];
+    for await (const line of file) {
+      if (!headers.length) {
+        headers = parseCsvLine(line);
+        continue;
+      }
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = cols[i] ?? "";
+      });
+
+      const key = (row.player_id ?? "").trim();
+      const name = (row.player ?? "").trim();
+      if (!key || !name) continue;
+      const p = this.getOrCreatePlayer(key, name);
+      p.name = name;
+      this.byName.set(normalize(name), p);
+
+      const year = Number.parseInt(row.season ?? "", 10);
+      if (Number.isFinite(year) && year > 0) p.years.add(year);
+
+      const rawTeam = (row.team ?? "").trim().toUpperCase();
+      if (rawTeam && rawTeam !== "TOT") {
+        const team = normalizeTeamCode(rawTeam);
+        if (team) p.teams.add(team);
+        if (team && Number.isFinite(year)) p.teamYears.add(`${team}|${year}`);
+      }
+    }
+  }
+
+  private async loadBbrefPerGame(filePath: string) {
+    type SeasonAgg = {
+      hasTot: boolean;
+      year: number;
+      games: number;
+      points: number;
+      assists: number;
+      rebounds: number;
+      threePm: number;
+      threePa: number;
+    };
+
+    const byPlayerSeason = new Map<string, SeasonAgg>();
+    const file = readline.createInterface({ input: fs.createReadStream(filePath) });
+    let headers: string[] = [];
+    for await (const line of file) {
+      if (!headers.length) {
+        headers = parseCsvLine(line);
+        continue;
+      }
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = cols[i] ?? "";
+      });
+
+      const key = (row.player_id ?? "").trim();
+      const name = (row.player ?? "").trim();
+      if (!key || !name) continue;
+      const year = Number.parseInt(row.season ?? "", 10);
+      if (!Number.isFinite(year) || year <= 0) continue;
+      const team = (row.team ?? "").trim().toUpperCase();
+      const games = Number(row.g ?? 0);
+      const ppg = Number(row.pts_per_game ?? 0);
+      const apg = Number(row.ast_per_game ?? 0);
+      const rpg = Number(row.trb_per_game ?? 0);
+      const threesPg = Number(row.x3p_per_game ?? 0);
+      const threesAttPg = Number(row.x3pa_per_game ?? 0);
+      if (!Number.isFinite(games) || games <= 0) continue;
+
+      const p = this.getOrCreatePlayer(key, name);
+      p.name = name;
+      this.byName.set(normalize(name), p);
+
+      const bucketKey = `${key}|${year}`;
+      const current = byPlayerSeason.get(bucketKey);
+      const rowAgg: SeasonAgg = {
+        hasTot: team === "TOT",
+        year,
+        games,
+        points: games * (Number.isFinite(ppg) ? ppg : 0),
+        assists: games * (Number.isFinite(apg) ? apg : 0),
+        rebounds: games * (Number.isFinite(rpg) ? rpg : 0),
+        threePm: games * (Number.isFinite(threesPg) ? threesPg : 0),
+        threePa: games * (Number.isFinite(threesAttPg) ? threesAttPg : 0)
+      };
+
+      if (!current) {
+        byPlayerSeason.set(bucketKey, rowAgg);
+      } else if (rowAgg.hasTot) {
+        byPlayerSeason.set(bucketKey, rowAgg);
+      } else if (!current.hasTot) {
+        current.games += rowAgg.games;
+        current.points += rowAgg.points;
+        current.assists += rowAgg.assists;
+        current.rebounds += rowAgg.rebounds;
+        current.threePm += rowAgg.threePm;
+        current.threePa += rowAgg.threePa;
+      }
+    }
+
+    for (const [keyYear, agg] of byPlayerSeason) {
+      const [playerKey = ""] = keyYear.split("|");
+      const p = this.players.get(playerKey);
+      if (!p) continue;
+      const season = p.seasons.get(agg.year) ?? { games: 0, points: 0, assists: 0, rebounds: 0, threePm: 0, threePa: 0 };
+      season.games = Math.max(season.games, Math.round(agg.games));
+      season.points = Math.max(season.points, Math.round(agg.points));
+      season.assists = Math.max(season.assists, Math.round(agg.assists));
+      season.rebounds = Math.max(season.rebounds, Math.round(agg.rebounds));
+      season.threePm = Math.max(season.threePm, Math.round(agg.threePm));
+      season.threePa = Math.max(season.threePa, Math.round(agg.threePa));
+      p.seasons.set(agg.year, season);
+    }
+  }
+
+  private async loadBbrefDraftHistory(filePath: string) {
+    const file = readline.createInterface({ input: fs.createReadStream(filePath) });
+    let headers: string[] = [];
+    for await (const line of file) {
+      if (!headers.length) {
+        headers = parseCsvLine(line);
+        continue;
+      }
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = cols[i] ?? "";
+      });
+      const key = (row.player_id ?? "").trim();
+      const name = (row.player ?? "").trim();
+      if (!key || !name) continue;
+      const p = this.getOrCreatePlayer(key, name);
+      p.name = name;
+      this.byName.set(normalize(name), p);
+
+      const draftYear = Number.parseInt(row.season ?? "", 10);
+      const draftRound = Number.parseInt(row.round ?? "", 10);
+      const draftNumber = Number.parseInt(row.overall_pick ?? "", 10);
+      if (Number.isFinite(draftYear) && draftYear > 0) p.draftYear = draftYear;
+      if (Number.isFinite(draftRound) && draftRound > 0) p.draftRound = draftRound;
+      if (Number.isFinite(draftNumber) && draftNumber > 0) p.draftNumber = draftNumber;
+
+      const draftedBy = normalizeTeamCode((row.tm ?? "").trim().toUpperCase());
+      if (draftedBy) p.draftedBy = draftedBy;
+    }
+  }
+
+  private async loadBbrefAllStar(filePath: string) {
+    const file = readline.createInterface({ input: fs.createReadStream(filePath) });
+    let headers: string[] = [];
+    for await (const line of file) {
+      if (!headers.length) {
+        headers = parseCsvLine(line);
+        continue;
+      }
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = cols[i] ?? "";
+      });
+      const key = (row.player_id ?? "").trim();
+      const name = (row.player ?? "").trim();
+      if (!key || !name) continue;
+      const p = this.getOrCreatePlayer(key, name);
+      p.name = name;
+      p.flags.allStar = true;
+      this.byName.set(normalize(name), p);
+    }
+  }
+
+  private async loadBbrefAwardShares(filePath: string) {
+    const file = readline.createInterface({ input: fs.createReadStream(filePath) });
+    let headers: string[] = [];
+    for await (const line of file) {
+      if (!headers.length) {
+        headers = parseCsvLine(line);
+        continue;
+      }
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = cols[i] ?? "";
+      });
+      const key = (row.player_id ?? "").trim();
+      const name = (row.player ?? "").trim();
+      if (!key || !name) continue;
+      const p = this.getOrCreatePlayer(key, name);
+      p.name = name;
+      this.byName.set(normalize(name), p);
+      const award = normalize((row.award ?? "").replace(/_/g, " "));
+      if (!award) continue;
+      const isWinner = (row.winner ?? "").trim().toUpperCase() === "TRUE";
+      if (!isWinner) continue;
+      if (award.includes("mvp") && !award.includes("finals")) p.flags.mvp = true;
+      if (award.includes("roy") || (award.includes("rookie") && award.includes("year"))) p.flags.roty = true;
+      if (award.includes("dpoy") || (award.includes("defensive") && award.includes("year"))) p.flags.dpoy = true;
+      if (award.includes("smoy") || (award.includes("sixth") && award.includes("man"))) p.flags.sixthMan = true;
+      if (award.includes("mip") || (award.includes("improved") && award.includes("player"))) p.flags.mip = true;
+      if (award.includes("finals") && award.includes("mvp")) p.flags.finalsMvp = true;
+    }
+  }
+
+  private async loadBbrefEndSeasonTeams(filePath: string) {
+    const file = readline.createInterface({ input: fs.createReadStream(filePath) });
+    let headers: string[] = [];
+    for await (const line of file) {
+      if (!headers.length) {
+        headers = parseCsvLine(line);
+        continue;
+      }
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        row[h] = cols[i] ?? "";
+      });
+      const key = (row.player_id ?? "").trim();
+      const name = (row.player ?? "").trim();
+      if (!key || !name) continue;
+      const p = this.getOrCreatePlayer(key, name);
+      p.name = name;
+      this.byName.set(normalize(name), p);
+      const type = normalize((row.type ?? "").replace(/_/g, " "));
+      if (type.includes("allnba")) p.flags.allNba = true;
+    }
+  }
+
+  private augmentMaxPointsFromLegacyCache(cachePath: string) {
+    try {
+      if (!fs.existsSync(cachePath)) return;
+      const raw = fs.readFileSync(cachePath, "utf8");
+      const parsed = JSON.parse(raw) as NbaCachePayload;
+      if (!Array.isArray(parsed.players)) return;
+      const byName = new Map<string, number>();
+      for (const lp of parsed.players) {
+        if (!lp?.name) continue;
+        const k = normalize(lp.name);
+        const prior = byName.get(k) ?? 0;
+        byName.set(k, Math.max(prior, lp.maxPointsGame ?? 0));
+      }
+      for (const p of this.players.values()) {
+        const maxPts = byName.get(normalize(p.name));
+        if (maxPts && maxPts > p.maxPointsGame) p.maxPointsGame = maxPts;
+      }
+    } catch {
+      // best-effort enrichment only
+    }
   }
 
   private linkTeammatesFromTeamYears() {

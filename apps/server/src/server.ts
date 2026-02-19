@@ -158,6 +158,9 @@ export const createAppServer = () => {
   });
 
   app.get("/nba/challenges", (req, res) => {
+    if (!nbaData.isReady()) {
+      return res.status(503).json({ error: "NBA dataset is still loading." });
+    }
     const size = Number(req.query.size ?? 3);
     const mode = String(req.query.mode ?? "casual");
     const gridSize = size === 4 ? 4 : 3;
@@ -237,10 +240,13 @@ export const createAppServer = () => {
     const room = rooms.get(roomCode);
     if (!room) return;
     clearTimer(roomCode);
+    if (room.snapshot.settings.timerMode === "none") {
+      room.timerHandle = undefined;
+      return;
+    }
     room.timerHandle = setInterval(() => {
       if (room.snapshot.state !== "IN_GAME") return;
       const settings = room.snapshot.settings;
-      if (settings.timerMode === "none") return;
 
       const turn = room.snapshot.turn;
       if (settings.timerMode === "per_move" && room.snapshot.remainingPerMove !== null) {
@@ -443,6 +449,9 @@ export const createAppServer = () => {
       queue.splice(0, queue.length, ...unique.slice(2));
 
       void (async () => {
+        if (!nbaData.isReady()) {
+          return emitErr("NBA dataset is still loading.");
+        }
         const u1 = await prisma.user.findUnique({ where: { id: a } });
         const u2 = await prisma.user.findUnique({ where: { id: b } });
         if (!u1 || !u2) return;
@@ -601,6 +610,7 @@ export const createAppServer = () => {
       if (room.snapshot.players.length !== 2) return emitErr("Need 2 players");
       if (!room.snapshot.players.every((p) => p.ready)) return emitErr("Players must be ready");
       if (room.snapshot.state !== "LOBBY") return emitErr("Already started");
+      if (!nbaData.isReady()) return emitErr("NBA dataset is still loading.");
       void startMatch(roomCode);
     });
 
@@ -651,6 +661,16 @@ export const createAppServer = () => {
       } catch {
         emitErr("Invalid move");
       }
+    });
+
+    socket.on("game:surrender", ({ userId, roomCode }) => {
+      const room = rooms.get(roomCode);
+      if (!room) return emitErr("Room not found");
+      if (room.snapshot.state !== "IN_GAME") return emitErr("Game is not active");
+      const player = room.snapshot.players.find((p) => p.userId === userId);
+      if (!player?.symbol) return emitErr("Player not in game");
+      const winner = player.symbol === "X" ? "O" : "X";
+      void finishRound(roomCode, winner, "forfeit");
     });
 
     socket.on("game:rematch", ({ userId, roomCode }) => {

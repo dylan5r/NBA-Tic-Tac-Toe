@@ -1,8 +1,6 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
-import { UIButton } from "../../components/ui/Button";
-import { UICard } from "../../components/ui/Card";
 import { api } from "../../lib/api";
 
 interface Row {
@@ -24,43 +22,72 @@ export default function LeaderboardPage() {
   }, [scope]);
 
   return (
-    <main className="arena-shell mx-auto min-h-screen max-w-[1220px] px-12 py-10">
-      <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Rankings</p>
-      <h1 className="font-display text-6xl uppercase leading-none">Leaderboard</h1>
-      <div className="mt-4 flex gap-2">
-        <UIButton variant={scope === "global" ? "primary" : "secondary"} onClick={() => setScope("global")}>
-          Global
-        </UIButton>
-        <UIButton variant={scope === "weekly" ? "primary" : "secondary"} onClick={() => setScope("weekly")}>
-          Weekly
-        </UIButton>
-      </div>
-      <UICard className="mt-6 rounded-[24px] p-5">
-        <table className="w-full text-left text-sm">
-          <thead className="text-xs uppercase tracking-[0.12em] text-slate-300">
-            <tr>
-              <th className="pb-2">#</th>
-              <th className="pb-2">Player</th>
-              <th className="pb-2">Rating</th>
-              <th className="pb-2">W/L</th>
-              <th className="pb-2">Streak</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.userId} className="border-t border-white/10 text-slate-100">
-                <td className="py-2 score-led text-xs text-slate-400">{String(i + 1).padStart(2, "0")}</td>
-                <td className="py-2 font-semibold">{r.username}</td>
-                <td className="py-2 score-led text-orange-300">{r.rating}</td>
-                <td>
-                  {r.wins}/{r.losses}
-                </td>
-                <td>{r.streak}</td>
+    <div className="min-h-screen bg-background-light text-slate-900 dark:bg-background-dark dark:text-slate-100">
+      <header className="border-b border-[#ee8c2b]/20 bg-background-dark sticky top-0 z-50">
+        <div className="mx-auto flex h-16 w-full max-w-[1200px] items-center justify-between px-6">
+          <div className="flex items-center gap-12">
+            <div className="flex items-center gap-3 cursor-pointer">
+              <div className="size-8 rounded-lg bg-[#ee8c2b] flex items-center justify-center text-[#221910]"><span className="material-symbols-outlined">sports_basketball</span></div>
+              <h1 className="text-xl font-bold uppercase tracking-tight">NBA <span className="text-[#ee8c2b]">TTT</span></h1>
+            </div>
+            <nav className="hidden md:flex items-center gap-8">
+              <a className="text-sm font-semibold uppercase tracking-wider text-slate-400 hover:text-[#ee8c2b]" href="#">Play</a>
+              <a className="text-sm font-semibold uppercase tracking-wider text-[#ee8c2b] border-b-2 border-[#ee8c2b] py-5" href="#">Leaderboard</a>
+              <a className="text-sm font-semibold uppercase tracking-wider text-slate-400 hover:text-[#ee8c2b]" href="#">Stats</a>
+            </nav>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="rounded-lg bg-slate-100 dark:bg-[#1f1812] px-4 py-2 text-xs font-bold uppercase tracking-wider" onClick={() => setScope("global")}>Monthly</button>
+            <button className="rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-400" onClick={() => setScope("weekly")}>Weekly</button>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-[1000px] px-6 py-12">
+        <div className="mb-10 flex flex-col md:flex-row justify-between items-end gap-4">
+          <div>
+            <h2 className="text-4xl font-black uppercase tracking-tighter">Global Rankings</h2>
+            <p className="mt-2 text-sm text-slate-500">Live leaderboard updates</p>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-[#ee8c2b]/10 bg-white dark:bg-[#1f1812] shadow-xl shadow-black/20">
+          <table className="w-full border-collapse text-left">
+            <thead>
+              <tr className="border-b border-slate-200 dark:border-[#ee8c2b]/10 bg-slate-50 dark:bg-white/5">
+                <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-slate-500">Rank</th>
+                <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-slate-500">Username</th>
+                <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-slate-500 text-right">Rating</th>
+                <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-slate-500 text-right">Wins</th>
+                <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-slate-500 text-right">Win %</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </UICard>
-    </main>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-[#ee8c2b]/5">
+              {rows.map((r, i) => {
+                const total = r.wins + r.losses;
+                const pct = total > 0 ? Math.round((r.wins / total) * 100) : 0;
+                return (
+                  <tr key={r.userId} className="hover:bg-[#ee8c2b]/5">
+                    <td className="px-6 py-5 text-lg font-black italic text-[#ee8c2b]">{String(i + 1).padStart(2, "0")}</td>
+                    <td className="px-6 py-5 font-bold text-base tracking-tight">{r.username}</td>
+                    <td className="px-6 py-5 text-right text-lg font-black tabular-nums">{r.rating}</td>
+                    <td className="px-6 py-5 text-right text-slate-400 tabular-nums">{r.wins}</td>
+                    <td className="px-6 py-5 text-right">
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="font-bold text-sm">{pct}%</span>
+                        <div className="h-1 w-16 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                          <div className="h-full bg-[#ee8c2b]" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
   );
 }
+
