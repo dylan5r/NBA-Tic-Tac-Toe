@@ -1,0 +1,18 @@
+{
+  "name": "nba-tic-tac-toe",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace @nba/web\" \"npm run dev --workspace @nba/server\" \"npm run dev:open\"",
+    "dev:open": "powershell -NoProfile -Command \"Start-Sleep -Seconds 3; Start-Process 'http://localhost:3000'\"",
+    "build": "npm run build --workspace @nba/game-engine && npm run build --workspace @nba/contracts && npm run build --workspace @nba/server && npm run build --workspace @nba/web",
+    "test": "npm run test --workspace @nba/game-engine && npm run test --workspace @nba/server",
+    "lint": "npm run lint --workspace @nba/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

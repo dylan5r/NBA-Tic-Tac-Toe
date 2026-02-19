@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  username    String   @unique
+  createdAt   DateTime @default(now())
+  rating      Int      @default(1200)
+  wins        Int      @default(0)
+  losses      Int      @default(0)
+  streak      Int      @default(0)
+  settings    Json?
+  lastSeenAt  DateTime @default(now())
+  matchesA    Match[]  @relation("PlayerA")
+  matchesB    Match[]  @relation("PlayerB")
+  winnerOf    Match[]  @relation("Winner")
+}
+
+model Match {
+  id            String   @id @default(cuid())
+  mode          String
+  ranked        Boolean  @default(false)
+  playerAId     String
+  playerBId     String
+  winnerUserId  String?
+  moves         Json
+  startedAt     DateTime
+  endedAt       DateTime
+  ratingDeltaA  Int      @default(0)
+  ratingDeltaB  Int      @default(0)
+  boardVariant  String   @default("3x3")
+  playerA       User     @relation("PlayerA", fields: [playerAId], references: [id])
+  playerB       User     @relation("PlayerB", fields: [playerBId], references: [id])
+  winner        User?    @relation("Winner", fields: [winnerUserId], references: [id])
+}
+
+model Room {
+  code        String   @id
+  hostId      String
+  settings    Json
+  state       String
+  players     Json
+  spectators  Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

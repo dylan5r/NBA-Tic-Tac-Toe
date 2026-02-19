@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+
+# build outputs
+.next/
+dist/
+apps/server/dist/
+coverage/
+*.tsbuildinfo
+
+# env files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# dataset folders
+nbadata/
+nba data/
+
+# test / tooling outputs
+apps/web/playwright-report/
+apps/web/test-results/
+.turbo/
+.vercel/
+apps/server/.prisma/
+.prisma/
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editors
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
