@@ -37,6 +37,12 @@ const challengeSampleSchema = z.object({
   challengeIds: z.array(z.string().min(1)).optional(),
   usedKeys: z.array(z.string()).optional()
 });
+const challengeAnswersSchema = z.object({
+  challengeId: z.string().min(1).optional(),
+  challengeIds: z.array(z.string().min(1)).optional(),
+  usedKeys: z.array(z.string()).optional(),
+  limit: z.number().int().min(1).max(500).optional()
+});
 
 const roomCreateRate = new Map<string, number>();
 const queueRate = new Map<string, number>();
@@ -50,6 +56,37 @@ const shuffle = <T>(items: T[]): T[] => {
     [arr[i], arr[j]] = [arr[j]!, arr[i]!];
   }
   return arr;
+};
+
+const sanitizeRoomSettings = (input: Partial<RoomSettings> | undefined): RoomSettings => {
+  const merged = { ...defaultSettings, ...(input ?? {}) };
+  const seriesLength: 1 | 3 | 5 = merged.seriesLength === 1 || merged.seriesLength === 5 ? merged.seriesLength : 3;
+  const timerMode: RoomSettings["timerMode"] =
+    merged.timerMode === "none" || merged.timerMode === "per_game" || merged.timerMode === "per_move"
+      ? merged.timerMode
+      : "per_move";
+  const perMoveSeconds = Number.isFinite(merged.perMoveSeconds)
+    ? Math.min(300, Math.max(1, Math.floor(merged.perMoveSeconds)))
+    : defaultSettings.perMoveSeconds;
+  const perGameSeconds = Number.isFinite(merged.perGameSeconds)
+    ? Math.min(3_600, Math.max(10, Math.floor(merged.perGameSeconds)))
+    : defaultSettings.perGameSeconds;
+  const boardVariant: RoomSettings["boardVariant"] = merged.boardVariant === "4x4" ? "4x4" : "3x3";
+  const drawMode: RoomSettings["drawMode"] = merged.drawMode === "count" ? "count" : "ignore";
+  const boardSkin: RoomSettings["boardSkin"] =
+    merged.boardSkin === "arena" || merged.boardSkin === "neon" || merged.boardSkin === "classic"
+      ? merged.boardSkin
+      : "classic";
+
+  return {
+    seriesLength,
+    timerMode,
+    perMoveSeconds,
+    perGameSeconds,
+    boardVariant,
+    drawMode,
+    boardSkin
+  };
 };
 
 export const createAppServer = () => {
@@ -165,7 +202,13 @@ export const createAppServer = () => {
     const mode = String(req.query.mode ?? "casual");
     const gridSize = size === 4 ? 4 : 3;
     const ranked = mode === "ranked";
-    const { rows, cols } = nbaData.challengesForGrid({ size: gridSize, ranked });
+    let rows;
+    let cols;
+    try {
+      ({ rows, cols } = nbaData.challengesForGrid({ size: gridSize, ranked }));
+    } catch {
+      return res.status(503).json({ error: "Could not generate a valid challenge grid yet. Retrying..." });
+    }
     return res.json({
       rows: rows.map((c) => ({ id: c.id, text: c.text, difficulty: c.difficulty, type: c.type, category: c.category, weight: c.weight })),
       cols: cols.map((c) => ({ id: c.id, text: c.text, difficulty: c.difficulty, type: c.type, category: c.category, weight: c.weight }))
@@ -187,6 +230,15 @@ export const createAppServer = () => {
     const sample = nbaData.sampleAnswerForChallengeIds(challengeIds, parsed.data.usedKeys ?? []);
     if (!sample) return res.status(404).json({ error: "No valid sample answer found" });
     return res.json(sample);
+  });
+
+  app.post("/nba/answers", (req, res) => {
+    const parsed = challengeAnswersSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Invalid payload" });
+    const challengeIds = parsed.data.challengeIds ?? (parsed.data.challengeId ? [parsed.data.challengeId] : []);
+    if (!challengeIds.length) return res.status(400).json({ error: "Missing challenge ids" });
+    const players = nbaData.possibleAnswersForChallengeIds(challengeIds, parsed.data.usedKeys ?? [], parsed.data.limit ?? 200);
+    return res.json({ players });
   });
 
   app.get("/nba/players", (req, res) => {
@@ -365,6 +417,34 @@ export const createAppServer = () => {
     room.snapshot.state = "IN_GAME";
   };
 
+  const startRematchMatch = (roomCode: string) => {
+    const room = rooms.get(roomCode);
+    if (!room) return;
+    room.rematchVotes.clear();
+    room.rematchRequester = null;
+    room.matchId = `${room.code}-${Date.now()}`;
+    room.snapshot.matchId = room.matchId;
+    room.snapshot.round = 1;
+    room.snapshot.score = { X: 0, O: 0, draws: 0 };
+    room.snapshot.state = "IN_GAME";
+    room.snapshot.winner = null;
+    const size = room.snapshot.boardVariant === "3x3" ? 3 : 4;
+    room.snapshot.board = Array(size * size).fill(null);
+    const grid = nbaData.challengesForGrid({ size: size as 3 | 4, ranked: room.ranked });
+    room.rowChallenges = grid.rows;
+    room.colChallenges = grid.cols;
+    room.snapshot.rowChallenges = grid.rows.map((c) => c.text);
+    room.snapshot.colChallenges = grid.cols.map((c) => c.text);
+    room.snapshot.usedAnswers = [];
+    room.usedAnswerKeys.clear();
+    room.snapshot.moves = [];
+    room.snapshot.remainingPerGame = { X: room.snapshot.settings.perGameSeconds, O: room.snapshot.settings.perGameSeconds };
+    room.snapshot.remainingPerMove =
+      room.snapshot.settings.timerMode === "per_move" ? room.snapshot.settings.perMoveSeconds : null;
+    void broadcastSnapshot(roomCode);
+    startRoundTimer(roomCode);
+  };
+
   const finishRound = async (roomCode: string, winner: "X" | "O" | "draw", reason: "board" | "timeout" | "forfeit") => {
     const room = rooms.get(roomCode);
     if (!room) return;
@@ -512,7 +592,7 @@ export const createAppServer = () => {
           hostId: userId,
           ranked: false,
           matchId,
-          settings: { ...defaultSettings, ...settings },
+          settings: sanitizeRoomSettings(settings),
           players: [{ userId: user.id, username: user.username, ready: false, connected: true, symbol: "X", rating: user.rating }]
         });
         room.socketsByUser.set(userId, socket.id);
@@ -589,9 +669,10 @@ export const createAppServer = () => {
       if (!room) return emitErr("Room not found");
       if (room.hostId !== userId) return emitErr("Only host can change settings");
       if (room.snapshot.state !== "LOBBY") return emitErr("Cannot change settings after start");
-      room.snapshot.settings = settings;
-      room.snapshot.boardVariant = settings.boardVariant;
-      const size = settings.boardVariant === "3x3" ? 3 : 4;
+      const safeSettings = sanitizeRoomSettings(settings);
+      room.snapshot.settings = safeSettings;
+      room.snapshot.boardVariant = safeSettings.boardVariant;
+      const size = safeSettings.boardVariant === "3x3" ? 3 : 4;
       room.snapshot.board = Array(size * size).fill(null);
       const grid = nbaData.challengesForGrid({ size: size as 3 | 4, ranked: room.ranked });
       room.rowChallenges = grid.rows;
@@ -600,6 +681,9 @@ export const createAppServer = () => {
       room.snapshot.colChallenges = grid.cols.map((c) => c.text);
       room.snapshot.usedAnswers = [];
       room.usedAnswerKeys.clear();
+      room.snapshot.remainingPerGame = { X: safeSettings.perGameSeconds, O: safeSettings.perGameSeconds };
+      room.snapshot.remainingPerMove =
+        safeSettings.timerMode === "per_move" ? safeSettings.perMoveSeconds : null;
       void broadcastSnapshot(roomCode);
     });
 
@@ -628,7 +712,12 @@ export const createAppServer = () => {
       if (!rowChallenge || !colChallenge) return emitErr("No challenge configured for this cell.");
       const verdict =
         process.env.NODE_ENV === "test"
-          ? { ok: true as const, key: `test-${userId}-${index}-${Date.now()}`, canonical: answer ?? "Test Player" }
+          ? {
+              ok: true as const,
+              key: `test-${userId}-${index}-${Date.now()}`,
+              canonical: answer ?? "Test Player",
+              headshotUrl: null
+            }
           : nbaData.validateAnswerAgainstMany(answer ?? "", [rowChallenge, colChallenge], room.usedAnswerKeys);
       if (!verdict.ok) return emitErr(verdict.reason ?? "Invalid answer.");
       try {
@@ -647,7 +736,11 @@ export const createAppServer = () => {
         room.snapshot.board = next.board;
         room.snapshot.turn = next.turn;
         room.usedAnswerKeys.add(verdict.key!);
-        room.snapshot.usedAnswers.push(verdict.canonical!);
+        room.snapshot.usedAnswers.push({
+          key: verdict.key!,
+          name: verdict.canonical!,
+          headshotUrl: verdict.headshotUrl ?? null
+        });
         room.snapshot.moves.push(move);
         if (room.snapshot.settings.timerMode === "per_move") {
           room.snapshot.remainingPerMove = room.snapshot.settings.perMoveSeconds;
@@ -673,33 +766,74 @@ export const createAppServer = () => {
       void finishRound(roomCode, winner, "forfeit");
     });
 
+    socket.on("game:rematchRequest", ({ userId, roomCode }) => {
+      const room = rooms.get(roomCode);
+      if (!room) return emitErr("Room not found");
+      if (room.snapshot.players.length < 2) return emitErr("Need 2 players for rematch");
+      const requester = room.snapshot.players.find((p) => p.userId === userId);
+      if (!requester) return emitErr("Player not in room");
+
+      if (room.rematchRequester && room.rematchRequester !== userId) {
+        room.rematchVotes = new Set([room.rematchRequester, userId]);
+        io.to(roomCode).emit("game:rematchResponse", {
+          byUserId: userId,
+          byUsername: requester.username,
+          accepted: true
+        });
+        startRematchMatch(roomCode);
+        return;
+      }
+
+      room.rematchRequester = userId;
+      room.rematchVotes = new Set([userId]);
+      io.to(roomCode).emit("game:rematchRequested", {
+        fromUserId: userId,
+        fromUsername: requester.username
+      });
+    });
+
+    socket.on("game:rematchRespond", ({ userId, roomCode, accepted }) => {
+      const room = rooms.get(roomCode);
+      if (!room) return emitErr("Room not found");
+      const responder = room.snapshot.players.find((p) => p.userId === userId);
+      if (!responder) return emitErr("Player not in room");
+      const requesterId = room.rematchRequester;
+      if (!requesterId) return emitErr("No rematch request to respond to");
+      if (requesterId === userId) return emitErr("Requester cannot respond to own request");
+
+      if (!accepted) {
+        io.to(roomCode).emit("game:rematchResponse", {
+          byUserId: userId,
+          byUsername: responder.username,
+          accepted: false
+        });
+        room.rematchRequester = null;
+        room.rematchVotes.clear();
+        return;
+      }
+
+      room.rematchVotes.add(userId);
+      io.to(roomCode).emit("game:rematchResponse", {
+        byUserId: userId,
+        byUsername: responder.username,
+        accepted: true
+      });
+      if (room.rematchVotes.size >= 2) {
+        startRematchMatch(roomCode);
+      }
+    });
+
     socket.on("game:rematch", ({ userId, roomCode }) => {
       const room = rooms.get(roomCode);
       if (!room) return emitErr("Room not found");
-      room.rematchVotes.add(userId);
-      if (room.rematchVotes.size < 2) return;
-      room.rematchVotes.clear();
-      room.matchId = `${room.code}-${Date.now()}`;
-      room.snapshot.matchId = room.matchId;
-      room.snapshot.round = 1;
-      room.snapshot.score = { X: 0, O: 0, draws: 0 };
-      room.snapshot.state = "IN_GAME";
-      room.snapshot.winner = null;
-      const size = room.snapshot.boardVariant === "3x3" ? 3 : 4;
-      room.snapshot.board = Array(size * size).fill(null);
-      const grid = nbaData.challengesForGrid({ size: size as 3 | 4, ranked: room.ranked });
-      room.rowChallenges = grid.rows;
-      room.colChallenges = grid.cols;
-      room.snapshot.rowChallenges = grid.rows.map((c) => c.text);
-      room.snapshot.colChallenges = grid.cols.map((c) => c.text);
-      room.snapshot.usedAnswers = [];
-      room.usedAnswerKeys.clear();
-      room.snapshot.moves = [];
-      room.snapshot.remainingPerGame = { X: room.snapshot.settings.perGameSeconds, O: room.snapshot.settings.perGameSeconds };
-      room.snapshot.remainingPerMove =
-        room.snapshot.settings.timerMode === "per_move" ? room.snapshot.settings.perMoveSeconds : null;
-      void broadcastSnapshot(roomCode);
-      startRoundTimer(roomCode);
+      const requester = room.snapshot.players.find((p) => p.userId === userId);
+      if (!requester) return emitErr("Player not in room");
+      room.rematchRequester = userId;
+      room.rematchVotes = new Set([userId]);
+      io.to(roomCode).emit("game:rematchRequested", {
+        fromUserId: userId,
+        fromUsername: requester.username
+      });
     });
 
     socket.on("reconnect:resume", ({ userId, roomCode }) => {

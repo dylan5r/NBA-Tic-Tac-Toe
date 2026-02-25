@@ -8,6 +8,8 @@ import { UICard } from "../../components/ui/Card";
 import { getSocket } from "../../lib/socket";
 import { useApp } from "../providers";
 
+const LOCAL_MATCH_CONFIG_KEY = "nba_ttt_local_match_config_v1";
+
 const baseSettings: RoomSettings = {
   seriesLength: 3,
   timerMode: "per_move",
@@ -57,9 +59,23 @@ function SetupPageContent() {
   }, [router, status, user]);
 
   const startLocal = () => {
-    router.push(
-      `/match/local?mode=${mode}&difficulty=${difficulty}&side=${side}&series=${settings.seriesLength}&timerMode=${settings.timerMode}&perMove=${settings.perMoveSeconds}&board=${settings.boardVariant}`
-    );
+    const payload = {
+      mode,
+      difficulty,
+      side,
+      settings: {
+        seriesLength: settings.seriesLength,
+        timerMode: settings.timerMode,
+        perMoveSeconds: settings.perMoveSeconds,
+        boardVariant: settings.boardVariant
+      }
+    };
+    try {
+      sessionStorage.setItem(LOCAL_MATCH_CONFIG_KEY, JSON.stringify(payload));
+    } catch {
+      // Ignore storage failures; match page will fall back to defaults.
+    }
+    router.push("/match/local");
   };
 
   const queueOnline = () => {

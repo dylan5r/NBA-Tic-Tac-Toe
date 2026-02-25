@@ -3,6 +3,11 @@
 import clsx from "clsx";
 import { useMemo } from "react";
 
+export interface TileClaim {
+  name: string;
+  headshotUrl?: string | null;
+}
+
 export const GameBoard = ({
   board,
   rowLabels,
@@ -19,13 +24,16 @@ export const GameBoard = ({
   rowLabels?: string[];
   colLabels?: string[];
   usedAnswers?: string[];
-  cellAnswersByIndex?: Record<number, string>;
+  cellAnswersByIndex?: Record<number, TileClaim>;
   hoverSymbol?: "X" | "O";
   onCell: (i: number) => void;
   disabled?: boolean;
   size?: 3 | 4;
   compact?: boolean;
 }) => {
+  const fallbackImageUrl = (name: string, seed: string) =>
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&size=256&background=1f2937&color=f8fafc&bold=true&rounded=true&format=png&seed=${encodeURIComponent(seed)}`;
+
   const winLine = useMemo(() => {
     const lines =
       size === 3
@@ -50,8 +58,15 @@ export const GameBoard = ({
 
   const lineStyle = useMemo(() => {
     if (!winLine) return null;
-    const start = winLine[0]!;
-    const end = winLine[winLine.length - 1]!;
+    let start = winLine[0]!;
+    let end = winLine[winLine.length - 1]!;
+    const sr0 = Math.floor(start / size);
+    const sc0 = start % size;
+    const er0 = Math.floor(end / size);
+    const ec0 = end % size;
+    if (sc0 > ec0 || (sc0 === ec0 && sr0 > er0)) {
+      [start, end] = [end, start];
+    }
     const sr = Math.floor(start / size);
     const sc = start % size;
     const er = Math.floor(end / size);
@@ -70,6 +85,7 @@ export const GameBoard = ({
       transform: `translateY(-50%) rotate(${angle}deg)`
     };
   }, [size, winLine]);
+  const lineKey = winLine ? winLine.join("-") : "none";
 
   if (compact) {
     const boardSizeClass = "w-[min(60vw,600px)] max-w-[600px]";
@@ -105,6 +121,7 @@ export const GameBoard = ({
                   const col = idx % size;
                   const coord = `${String.fromCharCode(65 + row)}${col + 1}`;
                   const answer = cellAnswersByIndex?.[idx];
+                  const answerImage = answer ? answer.headshotUrl || fallbackImageUrl(answer.name, `${idx}`) : null;
                   return (
                     <button
                       key={idx}
@@ -118,10 +135,10 @@ export const GameBoard = ({
                       disabled={disabled || value !== null}
                       aria-label={`Cell ${idx + 1}`}
                     >
-                      {value === "X" && (
+                      {value === "X" && !answer && (
                         <span className="material-symbols-outlined text-6xl text-blue-500 [filter:drop-shadow(0_0_8px_rgba(59,130,246,0.5))]">close</span>
                       )}
-                      {value === "O" && (
+                      {value === "O" && !answer && (
                         <span className="material-symbols-outlined text-6xl text-[#f97316] [filter:drop-shadow(0_0_8px_rgba(249,115,22,0.5))]">circle</span>
                       )}
                       {!value && (
@@ -129,10 +146,33 @@ export const GameBoard = ({
                           {hoverSymbol === "X" ? "close" : "circle"}
                         </span>
                       )}
-                      {answer && (
-                        <span className="absolute left-2 right-2 top-2 line-clamp-2 text-center text-[10px] font-medium text-white/90">
-                          {answer}
-                        </span>
+                      {answer && answerImage && (
+                        <div className="animate-claim-pop absolute inset-0">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={answerImage}
+                            alt={answer.name}
+                            className="h-full w-full object-cover opacity-90"
+                            onError={(e) => {
+                              const img = e.currentTarget as HTMLImageElement;
+                              const fb = fallbackImageUrl(answer.name, `${idx}-fb`);
+                              if (img.src !== fb) img.src = fb;
+                            }}
+                          />
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-black/10 p-2">
+                            <span className="line-clamp-2 text-center text-[10px] font-semibold text-white">{answer.name}</span>
+                          </div>
+                          <span
+                            className={clsx(
+                              "material-symbols-outlined pointer-events-none absolute inset-0 grid place-items-center text-[112px] leading-none",
+                              value === "X"
+                                ? "text-blue-400/95 [text-shadow:0_0_16px_rgba(59,130,246,0.65)]"
+                                : "text-[#f97316]/95 [text-shadow:0_0_16px_rgba(249,115,22,0.65)]"
+                            )}
+                          >
+                            {value === "X" ? "close" : "circle"}
+                          </span>
+                        </div>
                       )}
                       <span className="absolute bottom-2 right-2 font-mono text-[10px] text-[#a3a3a3] opacity-50">{coord}</span>
                     </button>
@@ -141,7 +181,8 @@ export const GameBoard = ({
               </div>
               {winLine && lineStyle && (
                 <div
-                  className="pointer-events-none absolute h-1 origin-left animate-draw-line rounded-full bg-gradient-to-r from-orange-300 to-red-400 shadow-glowOrange"
+                  key={lineKey}
+                  className="pointer-events-none absolute h-1 origin-left rounded-full bg-gradient-to-r from-orange-300 to-red-400 shadow-glowOrange"
                   style={lineStyle}
                 />
               )}
@@ -164,6 +205,7 @@ export const GameBoard = ({
                 const col = idx % size;
                 const coord = `${String.fromCharCode(65 + row)}${col + 1}`;
                 const answer = cellAnswersByIndex?.[idx];
+                const answerImage = answer ? answer.headshotUrl || fallbackImageUrl(answer.name, `${idx}`) : null;
                 return (
                   <button
                     key={idx}
@@ -177,20 +219,47 @@ export const GameBoard = ({
                     disabled={disabled || value !== null}
                     aria-label={`Cell ${idx + 1}`}
                   >
-                    {value === "X" && <span className="material-symbols-outlined text-5xl text-blue-500">close</span>}
-                    {value === "O" && <span className="material-symbols-outlined text-5xl text-[#f97316]">circle</span>}
+                    {value === "X" && !answer && <span className="material-symbols-outlined text-5xl text-blue-500">close</span>}
+                    {value === "O" && !answer && <span className="material-symbols-outlined text-5xl text-[#f97316]">circle</span>}
                     {!value && (
                       <span className={clsx("material-symbols-outlined scale-75 text-5xl opacity-0 transition-all duration-300 group-hover:scale-100 group-hover:opacity-30", hoverSymbol === "X" ? "text-blue-500" : "text-[#f97316]")}>
                         {hoverSymbol === "X" ? "close" : "circle"}
                       </span>
                     )}
-                    {answer && <span className="absolute left-1 right-1 top-1 line-clamp-2 text-center text-[9px] text-white/90">{answer}</span>}
+                    {answer && answerImage && (
+                      <div className="animate-claim-pop absolute inset-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={answerImage}
+                          alt={answer.name}
+                          className="h-full w-full object-cover opacity-90"
+                          onError={(e) => {
+                            const img = e.currentTarget as HTMLImageElement;
+                            const fb = fallbackImageUrl(answer.name, `${idx}-fb`);
+                            if (img.src !== fb) img.src = fb;
+                          }}
+                        />
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-black/10 p-1.5">
+                          <span className="line-clamp-2 text-center text-[9px] font-semibold text-white">{answer.name}</span>
+                        </div>
+                        <span
+                          className={clsx(
+                            "material-symbols-outlined pointer-events-none absolute inset-0 grid place-items-center text-[86px] leading-none",
+                            value === "X"
+                              ? "text-blue-400/95 [text-shadow:0_0_14px_rgba(59,130,246,0.65)]"
+                              : "text-[#f97316]/95 [text-shadow:0_0_14px_rgba(249,115,22,0.65)]"
+                          )}
+                        >
+                          {value === "X" ? "close" : "circle"}
+                        </span>
+                      </div>
+                    )}
                     <span className="absolute bottom-1 right-1 font-mono text-[9px] text-[#a3a3a3] opacity-50">{coord}</span>
                   </button>
                 );
               })}
             </div>
-            {winLine && lineStyle && <div className="pointer-events-none absolute h-1 origin-left rounded-full bg-gradient-to-r from-orange-300 to-red-400" style={lineStyle} />}
+            {winLine && lineStyle && <div key={lineKey} className="pointer-events-none absolute h-1 origin-left rounded-full bg-gradient-to-r from-orange-300 to-red-400" style={lineStyle} />}
           </div>
           <div className="mt-2 grid gap-2" style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))` }}>
             {(rowLabels ?? Array(size).fill("Row prompt")).map((label, idx) => (
@@ -242,13 +311,13 @@ export const GameBoard = ({
                 </span>
                 {cellAnswersByIndex?.[idx] && (
                   <span className="absolute left-2 right-2 top-2 line-clamp-2 text-center text-[10px] text-white/90">
-                    {cellAnswersByIndex[idx]}
+                    {cellAnswersByIndex[idx]?.name}
                   </span>
                 )}
               </button>
             ))}
             {winLine && lineStyle && (
-              <div className="pointer-events-none absolute h-1 origin-left animate-draw-line rounded-full bg-gradient-to-r from-orange-300 to-red-400 shadow-glowOrange" style={lineStyle} />
+              <div className="pointer-events-none absolute h-1 origin-left rounded-full bg-gradient-to-r from-orange-300 to-red-400 shadow-glowOrange" style={lineStyle} />
             )}
           </div>
         </div>

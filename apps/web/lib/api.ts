@@ -15,6 +15,25 @@ export interface NbaPlayerOption {
   name: string;
 }
 
+export interface NbaValidatedAnswer {
+  ok: boolean;
+  reason?: string;
+  key?: string;
+  canonical?: string;
+  headshotUrl?: string | null;
+}
+
+export interface NbaSampleAnswer {
+  key: string;
+  name: string;
+  headshotUrl?: string | null;
+}
+export interface NbaPossibleAnswer {
+  key: string;
+  name: string;
+  headshotUrl?: string | null;
+}
+
 export const api = {
   guest: async (username: string): Promise<PublicUser> => {
     const res = await fetch(`${API_URL}/auth/guest`, {
@@ -56,7 +75,7 @@ export const api = {
       body: JSON.stringify(payload)
     });
     if (!res.ok) throw new Error("Unable to validate answer");
-    return res.json() as Promise<{ ok: boolean; reason?: string; key?: string; canonical?: string }>;
+    return res.json() as Promise<NbaValidatedAnswer>;
   },
   nbaSampleAnswer: async (payload: { challengeId?: string; challengeIds?: string[]; usedKeys: string[] }) => {
     const res = await fetch(`${API_URL}/nba/sample-answer`, {
@@ -65,7 +84,17 @@ export const api = {
       body: JSON.stringify(payload)
     });
     if (!res.ok) return null;
-    return (await res.json()) as { key: string; name: string } | null;
+    return (await res.json()) as NbaSampleAnswer | null;
+  },
+  nbaPossibleAnswers: async (payload: { challengeId?: string; challengeIds?: string[]; usedKeys: string[]; limit?: number }) => {
+    const res = await fetch(`${API_URL}/nba/answers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) return [] as NbaPossibleAnswer[];
+    const json = await res.json();
+    return (json.players ?? []) as NbaPossibleAnswer[];
   },
   nbaPlayerSearch: async (query: string, limit = 8): Promise<NbaPlayerOption[]> => {
     const res = await fetch(`${API_URL}/nba/players?query=${encodeURIComponent(query)}&limit=${limit}`);

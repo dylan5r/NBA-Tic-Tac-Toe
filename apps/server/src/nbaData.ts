@@ -15,6 +15,7 @@ interface PlayerSeasonTotals {
 interface PlayerFacts {
   key: string;
   name: string;
+  personId: string | null;
   teams: Set<string>;
   teamNames: Set<string>;
   years: Set<number>;
@@ -52,6 +53,7 @@ interface NbaCachePayload {
   players: Array<{
     key: string;
     name: string;
+    personId?: string | null;
     teams: string[];
     teamNames: string[];
     years: number[];
@@ -68,7 +70,7 @@ interface NbaCachePayload {
   }>;
 }
 
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 4;
 
 export interface GeneratedPrompt {
   id: string;
@@ -84,6 +86,21 @@ export interface PlayerSearchResult {
   key: string;
   name: string;
 }
+
+interface AnswerVerdict {
+  ok: boolean;
+  reason?: string;
+  key?: string;
+  canonical?: string;
+  headshotUrl?: string | null;
+}
+
+const nbaHeadshotUrl = (personId: string | null | undefined): string | null => {
+  const id = (personId ?? "").trim();
+  if (!id) return null;
+  if (!/^\d+$/.test(id)) return null;
+  return `https://cdn.nba.com/headshots/nba/latest/260x190/${id}.png`;
+};
 
 const normalize = (s: string): string =>
   s
@@ -124,10 +141,6 @@ const parseCsvLine = (line: string): string[] => {
   return out;
 };
 
-const difficultyProfile = {
-  casual: { easy: 0.6, medium: 0.3, hard: 0.1, expert: 0 },
-  ranked: { easy: 0.3, medium: 0.4, hard: 0.2, expert: 0.1 }
-} as const;
 
 const teamNameToCode: Record<string, string> = {
   lakers: "LAL",
@@ -161,6 +174,22 @@ const teamNameToCode: Record<string, string> = {
   "76ers": "PHI",
   bucks: "MIL",
   sixers: "PHI"
+};
+
+const mapCsvRow = (headers: string[], cols: string[]): Record<string, string> => {
+  const row: Record<string, string> = {};
+  for (let i = 0; i < headers.length; i += 1) {
+    const raw = (headers[i] ?? "").trim();
+    const value = cols[i] ?? "";
+    const lower = raw.toLowerCase();
+    const snake = lower.replace(/[\s-]+/g, "_");
+    const camel = snake.replace(/_([a-z0-9])/g, (_m, c: string) => c.toUpperCase());
+    const compact = lower.replace(/[^a-z0-9]/g, "");
+    for (const key of [raw, lower, snake, camel, compact]) {
+      if (key && row[key] === undefined) row[key] = value;
+    }
+  }
+  return row;
 };
 
 const legacyTeamCodeToModern: Record<string, string> = {
@@ -221,11 +250,15 @@ const dataDirCandidates = (cwd: string) => [
 ];
 
 class NbaDataService {
+  private static readonly MIN_CANDIDATES_PER_PROMPT = 5;
+  private static readonly MIN_INTERSECTION_PER_CELL = 5;
+
   private players = new Map<string, PlayerFacts>();
   private byName = new Map<string, PlayerFacts>();
   private prompts: GeneratedPrompt[] = [];
   private promptById = new Map<string, GeneratedPrompt>();
   private candidatesByPrompt = new Map<string, Set<string>>();
+  private recentCandidatesByPrompt = new Map<string, Set<string>>();
   private ready = false;
   private recentBoards: string[][] = [];
   private recentPromptIds: string[] = [];
@@ -249,6 +282,7 @@ class NbaDataService {
     const bbrefDraftPath = this.firstExistingPath(rootDir, ["Draft Pick History.csv"]);
     const bbrefAwardSharesPath = this.firstExistingPath(rootDir, ["Player Award Shares.csv"]);
     const bbrefAllNbaPath = this.firstExistingPath(rootDir, ["End of Season Teams.csv"]);
+    const commonInfoForBbref = this.firstExistingPath(path.join(rootDir, "csv"), ["common_player_info.csv"]);
 
     if (bbrefPerGamePath && bbrefSeasonInfoPath && bbrefCareerInfoPath) {
       const sourceFiles = [
@@ -264,6 +298,9 @@ class NbaDataService {
       const fingerprint = this.computeFingerprint(sourceFiles);
       const restored = this.restoreFromCache(cachePath, fingerprint);
       if (restored) {
+        if (commonInfoForBbref) {
+          await this.augmentPersonIdsFromCommonInfo(commonInfoForBbref);
+        }
         this.buildPromptEngine();
         this.ready = true;
         return;
@@ -277,6 +314,7 @@ class NbaDataService {
       if (bbrefAllStarPath) await this.loadBbrefAllStar(bbrefAllStarPath);
       if (bbrefAwardSharesPath) await this.loadBbrefAwardShares(bbrefAwardSharesPath);
       if (bbrefAllNbaPath) await this.loadBbrefEndSeasonTeams(bbrefAllNbaPath);
+      if (commonInfoForBbref) await this.augmentPersonIdsFromCommonInfo(commonInfoForBbref);
 
       this.linkTeammatesFromTeamYears();
       this.attachCuratedFlags();
@@ -389,6 +427,7 @@ class NbaDataService {
         const p: PlayerFacts = {
           key: entry.key,
           name: entry.name,
+          personId: entry.personId ?? null,
           teams: new Set(entry.teams),
           teamNames: new Set(entry.teamNames),
           years: new Set(entry.years),
@@ -420,6 +459,7 @@ class NbaDataService {
         players: [...this.players.values()].map((p) => ({
           key: p.key,
           name: p.name,
+          personId: p.personId,
           teams: [...p.teams],
           teamNames: [...p.teamNames],
           years: [...p.years],
@@ -450,6 +490,7 @@ class NbaDataService {
     const created: PlayerFacts = {
       key,
       name: fallbackName,
+      personId: null,
       teams: new Set<string>(),
       teamNames: new Set<string>(),
       years: new Set<number>(),
@@ -470,20 +511,21 @@ class NbaDataService {
   }
 
   challengesForBoard(params: { cellCount: number; ranked: boolean }): GeneratedPrompt[] {
-    const profile = params.ranked ? "ranked" : "casual";
-    const board = this.generateBalancedBoard(params.cellCount, profile);
+    const board = this.generateBalancedBoard(params.cellCount);
     this.trackBoard(board.map((p) => p.id));
     return board;
   }
 
   challengesForGrid(params: { size: 3 | 4; ranked: boolean }): { rows: GeneratedPrompt[]; cols: GeneratedPrompt[] } {
     const count = params.size;
-    const { rows, cols } = this.generateBalancedGrid(count, params.ranked ? "ranked" : "casual", 5);
-    this.trackBoard([...rows, ...cols].map((p) => p.id));
-    return { rows, cols };
+    const { rows, cols } = this.generateBalancedGrid(count, NbaDataService.MIN_INTERSECTION_PER_CELL);
+    const shuffledRows = this.shuffle(rows);
+    const shuffledCols = this.shuffle(cols);
+    this.trackBoard([...shuffledRows, ...shuffledCols].map((p) => p.id));
+    return { rows: shuffledRows, cols: shuffledCols };
   }
 
-  validateAnswer(answer: string, challenge: GeneratedPrompt, used: Set<string>): { ok: boolean; reason?: string; key?: string; canonical?: string } {
+  validateAnswer(answer: string, challenge: GeneratedPrompt, used: Set<string>): AnswerVerdict {
     if (!answer?.trim()) return { ok: false, reason: "Enter a player name." };
     const direct = this.byName.get(normalize(answer));
     if (!direct) return { ok: false, reason: "Player not found in NBA dataset." };
@@ -491,14 +533,14 @@ class NbaDataService {
     if (!this.matchesValidation(direct, challenge.validation)) {
       return { ok: false, reason: `Answer does not satisfy: ${challenge.text}` };
     }
-    return { ok: true, key: direct.key, canonical: direct.name };
+    return { ok: true, key: direct.key, canonical: direct.name, headshotUrl: nbaHeadshotUrl(direct.personId ?? direct.key) };
   }
 
   validateAnswerAgainstMany(
     answer: string,
     challenges: GeneratedPrompt[],
     used: Set<string>
-  ): { ok: boolean; reason?: string; key?: string; canonical?: string } {
+  ): AnswerVerdict {
     if (!answer?.trim()) return { ok: false, reason: "Enter a player name." };
     const direct = this.byName.get(normalize(answer));
     if (!direct) return { ok: false, reason: "Player not found in NBA dataset." };
@@ -508,7 +550,7 @@ class NbaDataService {
         return { ok: false, reason: `Answer does not satisfy: ${challenge.text}` };
       }
     }
-    return { ok: true, key: direct.key, canonical: direct.name };
+    return { ok: true, key: direct.key, canonical: direct.name, headshotUrl: nbaHeadshotUrl(direct.personId ?? direct.key) };
   }
 
   validateAnswerByChallengeId(answer: string, challengeId: string, usedKeys: string[]) {
@@ -533,7 +575,7 @@ class NbaDataService {
     const key = available[Math.floor(Math.random() * available.length)]!;
     const p = this.players.get(key);
     if (!p) return null;
-    return { key, name: p.name };
+    return { key, name: p.name, headshotUrl: nbaHeadshotUrl(p.personId ?? p.key) };
   }
 
   sampleAnswerForChallengeIds(challengeIds: string[], usedKeys: string[]) {
@@ -551,7 +593,28 @@ class NbaDataService {
     const key = available[Math.floor(Math.random() * available.length)]!;
     const p = this.players.get(key);
     if (!p) return null;
-    return { key, name: p.name };
+    return { key, name: p.name, headshotUrl: nbaHeadshotUrl(p.personId ?? p.key) };
+  }
+
+  possibleAnswersForChallengeIds(challengeIds: string[], usedKeys: string[], limit = 200) {
+    const sets = challengeIds
+      .map((id) => this.candidatesByPrompt.get(id))
+      .filter((x): x is Set<string> => Boolean(x));
+    if (!sets.length) return [];
+    let intersection = new Set<string>(sets[0]);
+    for (let i = 1; i < sets.length; i += 1) {
+      intersection = new Set([...intersection].filter((k) => sets[i]!.has(k)));
+      if (!intersection.size) break;
+    }
+
+    const available = [...intersection]
+      .filter((k) => !usedKeys.includes(k))
+      .map((k) => this.players.get(k))
+      .filter((x): x is PlayerFacts => Boolean(x))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, Math.max(1, limit));
+
+    return available.map((p) => ({ key: p.key, name: p.name, headshotUrl: nbaHeadshotUrl(p.personId ?? p.key) }));
   }
 
   searchPlayers(query: string, limit = 8): PlayerSearchResult[] {
@@ -572,7 +635,7 @@ class NbaDataService {
     return scored;
   }
 
-  private generateBalancedBoard(cellCount: number, profile: "casual" | "ranked"): GeneratedPrompt[] {
+  private generateBalancedBoard(cellCount: number): GeneratedPrompt[] {
     const pool = this.prompts.filter((p) => (this.candidatesByPrompt.get(p.id)?.size ?? 0) > 0);
     const recent = new Set(this.recentPromptIds);
     const avoidLastBoards = new Set(this.recentBoards.flat());
@@ -582,7 +645,7 @@ class NbaDataService {
     for (let attempt = 0; attempt < 500; attempt += 1) {
       const selected: GeneratedPrompt[] = [];
       while (selected.length < cellCount) {
-        const candidate = this.weightedPick(source, profile);
+        const candidate = this.weightedPick(source);
         if (!candidate) break;
         if (selected.some((s) => s.id === candidate.id)) continue;
         if (!this.validCategoryBalance(candidate, selected, cellCount)) continue;
@@ -602,43 +665,52 @@ class NbaDataService {
       .slice(0, cellCount);
   }
 
-  private generateBalancedGrid(side: 3 | 4, profile: "casual" | "ranked", minIntersection: number): { rows: GeneratedPrompt[]; cols: GeneratedPrompt[] } {
+  private generateBalancedGrid(side: 3 | 4, minIntersection: number): { rows: GeneratedPrompt[]; cols: GeneratedPrompt[] } {
     const target = side * 2;
-    const pool = this.prompts.filter((p) => (this.candidatesByPrompt.get(p.id)?.size ?? 0) >= minIntersection);
-    const recent = new Set(this.recentPromptIds);
-    const avoidLastBoards = new Set(this.recentBoards.flat());
-    const filtered = pool.filter((p) => !recent.has(p.id) && !avoidLastBoards.has(p.id));
-    const source = filtered.length >= target ? filtered : pool;
+    const pool = this.prompts.filter((p) => (this.recentCandidatesByPrompt.get(p.id)?.size ?? 0) >= minIntersection);
+    const source = pool;
+
+    const deterministic = this.findCompatibleGrid(source, side, minIntersection);
+    if (deterministic) return deterministic;
 
     for (let attempt = 0; attempt < 1000; attempt += 1) {
       const selected: GeneratedPrompt[] = [];
       while (selected.length < target) {
-        const candidate = this.weightedPick(source, profile);
+        const candidate = this.weightedPick(source);
         if (!candidate) break;
         if (selected.some((s) => s.id === candidate.id)) continue;
+        const usedKinds = new Set(selected.map((p) => this.promptArchetype(p)));
+        if (!this.allowsDuplicateArchetype(candidate) && usedKinds.has(this.promptArchetype(candidate))) continue;
         selected.push(candidate);
       }
       if (selected.length !== target) continue;
       const rows = selected.slice(0, side);
       const cols = selected.slice(side, target);
-      if (this.gridMeetsMinimumIntersections(rows, cols, minIntersection)) return { rows, cols };
+      if (this.gridMeetsMinimumIntersections(rows, cols, minIntersection) && this.gridHasUniquePromptArchetypes(rows, cols)) return { rows, cols };
     }
 
     const byPopulation = source
       .slice()
-      .sort((a, b) => (this.candidatesByPrompt.get(b.id)?.size ?? 0) - (this.candidatesByPrompt.get(a.id)?.size ?? 0));
+      .sort((a, b) => (this.recentCandidatesByPrompt.get(b.id)?.size ?? 0) - (this.recentCandidatesByPrompt.get(a.id)?.size ?? 0));
 
     for (let attempt = 0; attempt < 300; attempt += 1) {
       const rows = this.shuffle(byPopulation).slice(0, side);
       if (rows.length !== side) continue;
+      if (!this.lineHasUniqueRequiredArchetypes(rows)) continue;
       const cols: GeneratedPrompt[] = [];
+      const usedKinds = new Set(
+        rows.filter((p) => !this.allowsDuplicateArchetype(p)).map((p) => this.promptArchetype(p))
+      );
       for (const candidate of byPopulation) {
         if (rows.some((r) => r.id === candidate.id) || cols.some((c) => c.id === candidate.id)) continue;
-        if (!rows.every((r) => this.intersectionSize(r.id, candidate.id) >= minIntersection)) continue;
+        const kind = this.promptArchetype(candidate);
+        if (!this.allowsDuplicateArchetype(candidate) && usedKinds.has(kind)) continue;
+        if (!rows.every((r) => this.intersectionRecentSize(r.id, candidate.id) >= minIntersection)) continue;
         cols.push(candidate);
+        if (!this.allowsDuplicateArchetype(candidate)) usedKinds.add(kind);
         if (cols.length === side) break;
       }
-      if (cols.length === side && this.gridMeetsMinimumIntersections(rows, cols, minIntersection)) {
+      if (cols.length === side && this.gridMeetsMinimumIntersections(rows, cols, minIntersection) && this.gridHasUniquePromptArchetypes(rows, cols)) {
         return { rows, cols };
       }
     }
@@ -646,9 +718,104 @@ class NbaDataService {
     const strict = this.generateStrictGridFromTop(side, byPopulation, minIntersection);
     if (strict) return strict;
 
-    // Last-resort safety: keep the game playable instead of returning impossible cells.
-    // If the dataset is too constrained, return the highest-population prompts.
-    return { rows: byPopulation.slice(0, side), cols: byPopulation.slice(side, target) };
+    for (let retry = 0; retry < 500; retry += 1) {
+      const shuffled = this.shuffle(byPopulation);
+      const rows = shuffled.slice(0, side);
+      if (rows.length !== side) continue;
+      if (!this.lineHasUniqueRequiredArchetypes(rows)) continue;
+      const cols: GeneratedPrompt[] = [];
+      const usedKinds = new Set(
+        rows.filter((p) => !this.allowsDuplicateArchetype(p)).map((p) => this.promptArchetype(p))
+      );
+      for (const candidate of shuffled) {
+        if (rows.some((r) => r.id === candidate.id) || cols.some((c) => c.id === candidate.id)) continue;
+        const kind = this.promptArchetype(candidate);
+        if (!this.allowsDuplicateArchetype(candidate) && usedKinds.has(kind)) continue;
+        if (!rows.every((r) => this.intersectionRecentSize(r.id, candidate.id) >= minIntersection)) continue;
+        cols.push(candidate);
+        if (!this.allowsDuplicateArchetype(candidate)) usedKinds.add(kind);
+        if (cols.length === side) break;
+      }
+      if (cols.length === side && this.gridMeetsMinimumIntersections(rows, cols, minIntersection) && this.gridHasUniquePromptArchetypes(rows, cols)) {
+        return { rows, cols };
+      }
+    }
+
+    throw new Error("Unable to generate a valid challenge grid with required intersections.");
+  }
+
+  private findCompatibleGrid(
+    source: GeneratedPrompt[],
+    side: 3 | 4,
+    minIntersection: number
+  ): { rows: GeneratedPrompt[]; cols: GeneratedPrompt[] } | null {
+    if (source.length < side * 2) return null;
+    const ids = source.map((p) => p.id);
+    const byId = new Map(source.map((p) => [p.id, p]));
+    const pop = (id: string) => this.recentCandidatesByPrompt.get(id)?.size ?? 0;
+
+    const compatibility = new Map<string, Set<string>>();
+    for (const a of ids) {
+      const set = new Set<string>();
+      for (const b of ids) {
+        if (a === b) continue;
+        if (this.intersectionRecentSize(a, b) >= minIntersection) set.add(b);
+      }
+      compatibility.set(a, set);
+    }
+
+    // Keep strong prompts preferred, but inject jitter so boards vary across games.
+    const rowPriority = new Map<string, number>(
+      ids.map((id) => [id, pop(id) + Math.random() * 6])
+    );
+    const ordered = ids.slice().sort((a, b) => (rowPriority.get(b) ?? 0) - (rowPriority.get(a) ?? 0));
+
+    const recurse = (
+      startIndex: number,
+      rowIds: string[],
+      colCandidates: Set<string>
+    ): { rows: GeneratedPrompt[]; cols: GeneratedPrompt[] } | null => {
+      if (rowIds.length === side) {
+        const rowPrompts = rowIds.map((id) => byId.get(id)).filter((x): x is GeneratedPrompt => Boolean(x));
+        if (rowPrompts.length !== side) return null;
+        const usedKinds = new Set(
+          rowPrompts.filter((p) => !this.allowsDuplicateArchetype(p)).map((p) => this.promptArchetype(p))
+        );
+        const colPriority = new Map<string, number>(
+          [...colCandidates].map((id) => [id, pop(id) + Math.random() * 6])
+        );
+        const cols: GeneratedPrompt[] = [];
+        const orderedCols = [...colCandidates]
+          .filter((id) => !rowIds.includes(id))
+          .sort((a, b) => (colPriority.get(b) ?? 0) - (colPriority.get(a) ?? 0));
+        for (const id of orderedCols) {
+          const prompt = byId.get(id);
+          if (!prompt) continue;
+          const kind = this.promptArchetype(prompt);
+          if (!this.allowsDuplicateArchetype(prompt) && usedKinds.has(kind)) continue;
+          cols.push(prompt);
+          if (!this.allowsDuplicateArchetype(prompt)) usedKinds.add(kind);
+          if (cols.length === side) break;
+        }
+        if (cols.length !== side) return null;
+        if (this.gridMeetsMinimumIntersections(rowPrompts, cols, minIntersection) && this.gridHasUniquePromptArchetypes(rowPrompts, cols)) return { rows: rowPrompts, cols };
+        return null;
+      }
+
+      for (let i = startIndex; i < ordered.length; i += 1) {
+        const candidateId = ordered[i]!;
+        if (rowIds.includes(candidateId)) continue;
+        const compat = compatibility.get(candidateId) ?? new Set<string>();
+        const nextCols = new Set<string>([...colCandidates].filter((id) => compat.has(id) && !rowIds.includes(id) && id !== candidateId));
+        if (nextCols.size < side) continue;
+        const found = recurse(i + 1, [...rowIds, candidateId], nextCols);
+        if (found) return found;
+      }
+
+      return null;
+    };
+
+    return recurse(0, [], new Set(ids));
   }
 
   private generateStrictGridFromTop(
@@ -656,14 +823,21 @@ class NbaDataService {
     sortedPrompts: GeneratedPrompt[],
     minIntersection: number
   ): { rows: GeneratedPrompt[]; cols: GeneratedPrompt[] } | null {
-    const rowsPool = sortedPrompts.slice(0, Math.min(24, sortedPrompts.length));
+    const maxRowsPool = side === 3 ? 60 : 40;
+    const rowsPool = sortedPrompts.slice(0, Math.min(maxRowsPool, sortedPrompts.length));
 
     const buildCols = (rows: GeneratedPrompt[]): GeneratedPrompt[] | null => {
       const cols: GeneratedPrompt[] = [];
+      const usedKinds = new Set(
+        rows.filter((p) => !this.allowsDuplicateArchetype(p)).map((p) => this.promptArchetype(p))
+      );
       for (const candidate of sortedPrompts) {
         if (rows.some((r) => r.id === candidate.id) || cols.some((c) => c.id === candidate.id)) continue;
-        if (!rows.every((r) => this.intersectionSize(r.id, candidate.id) >= minIntersection)) continue;
+        const kind = this.promptArchetype(candidate);
+        if (!this.allowsDuplicateArchetype(candidate) && usedKinds.has(kind)) continue;
+        if (!rows.every((r) => this.intersectionRecentSize(r.id, candidate.id) >= minIntersection)) continue;
         cols.push(candidate);
+        if (!this.allowsDuplicateArchetype(candidate)) usedKinds.add(kind);
         if (cols.length === side) return cols;
       }
       return null;
@@ -674,8 +848,9 @@ class NbaDataService {
         for (let b = a + 1; b < rowsPool.length; b += 1) {
           for (let c = b + 1; c < rowsPool.length; c += 1) {
             const rows = [rowsPool[a]!, rowsPool[b]!, rowsPool[c]!];
+            if (!this.lineHasUniqueRequiredArchetypes(rows)) continue;
             const cols = buildCols(rows);
-            if (cols && this.gridMeetsMinimumIntersections(rows, cols, minIntersection)) return { rows, cols };
+            if (cols && this.gridMeetsMinimumIntersections(rows, cols, minIntersection) && this.gridHasUniquePromptArchetypes(rows, cols)) return { rows, cols };
           }
         }
       }
@@ -687,8 +862,9 @@ class NbaDataService {
         for (let c = b + 1; c < rowsPool.length; c += 1) {
           for (let d = c + 1; d < rowsPool.length; d += 1) {
             const rows = [rowsPool[a]!, rowsPool[b]!, rowsPool[c]!, rowsPool[d]!];
+            if (!this.lineHasUniqueRequiredArchetypes(rows)) continue;
             const cols = buildCols(rows);
-            if (cols && this.gridMeetsMinimumIntersections(rows, cols, minIntersection)) return { rows, cols };
+            if (cols && this.gridMeetsMinimumIntersections(rows, cols, minIntersection) && this.gridHasUniquePromptArchetypes(rows, cols)) return { rows, cols };
           }
         }
       }
@@ -700,10 +876,46 @@ class NbaDataService {
     if (!rows.length || !cols.length) return false;
     for (const row of rows) {
       for (const col of cols) {
-        if (this.intersectionSize(row.id, col.id) < minIntersection) return false;
+        if (this.intersectionRecentSize(row.id, col.id) < minIntersection) return false;
       }
     }
     return true;
+  }
+
+  private gridHasUniquePromptArchetypes(rows: GeneratedPrompt[], cols: GeneratedPrompt[]): boolean {
+    const prompts = [...rows, ...cols].filter((p) => !this.allowsDuplicateArchetype(p));
+    const kinds = prompts.map((p) => this.promptArchetype(p));
+    return new Set(kinds).size === kinds.length;
+  }
+
+  private lineHasUniqueRequiredArchetypes(prompts: GeneratedPrompt[]): boolean {
+    const required = prompts.filter((p) => !this.allowsDuplicateArchetype(p));
+    const kinds = required.map((p) => this.promptArchetype(p));
+    return new Set(kinds).size === kinds.length;
+  }
+
+  private allowsDuplicateArchetype(prompt: GeneratedPrompt): boolean {
+    if (prompt.type !== "team") return false;
+    const keys = Object.keys(prompt.validation).filter((k) => (prompt.validation as Record<string, unknown>)[k] !== undefined);
+    return keys.length === 1 && keys[0] === "team";
+  }
+
+  private promptArchetype(prompt: GeneratedPrompt): string {
+    const v = prompt.validation;
+    const keys = Object.keys(v).filter((k) => (v as Record<string, unknown>)[k] !== undefined).sort();
+    return `${prompt.type}:${keys.join("|")}`;
+  }
+
+  private intersectionRecentSize(aId: string, bId: string): number {
+    const a = this.recentCandidatesByPrompt.get(aId);
+    const b = this.recentCandidatesByPrompt.get(bId);
+    if (!a || !b) return 0;
+    const [small, big] = a.size <= b.size ? [a, b] : [b, a];
+    let count = 0;
+    for (const key of small) {
+      if (big.has(key)) count += 1;
+    }
+    return count;
   }
 
   private intersectionSize(aId: string, bId: string): number {
@@ -727,9 +939,8 @@ class NbaDataService {
     return out;
   }
 
-  private weightedPick(pool: GeneratedPrompt[], profile: "casual" | "ranked"): GeneratedPrompt | null {
-    const weights = difficultyProfile[profile];
-    const weighted = pool.map((p) => ({ p, w: p.weight * weights[p.difficulty] }));
+  private weightedPick(pool: GeneratedPrompt[]): GeneratedPrompt | null {
+    const weighted = pool.map((p) => ({ p, w: Math.max(1, p.weight) }));
     const total = weighted.reduce((sum, i) => sum + i.w, 0);
     if (total <= 0) return null;
     let r = Math.random() * total;
@@ -750,9 +961,7 @@ class NbaDataService {
 
     const remaining = cellCount - (selected.length + 1);
     const statCount = selected.filter((s) => s.category === "stat").length + (candidate.category === "stat" ? 1 : 0);
-    const teammateCount = selected.filter((s) => s.category === "teammate").length + (candidate.category === "teammate" ? 1 : 0);
     if (statCount + remaining < 2) return false;
-    if (teammateCount + remaining < 1) return false;
     return true;
   }
 
@@ -807,8 +1016,7 @@ class NbaDataService {
 
   private finalBoardChecks(board: GeneratedPrompt[], cellCount: number) {
     const statCount = board.filter((p) => p.category === "stat").length;
-    const teammateCount = board.filter((p) => p.category === "teammate").length;
-    if (statCount < 2 || teammateCount < 1) return false;
+    if (statCount < 2) return false;
     const side = Math.sqrt(cellCount);
     if (!Number.isInteger(side)) return true;
     for (let r = 0; r < side; r += 1) {
@@ -829,21 +1037,39 @@ class NbaDataService {
     this.prompts = buildPromptCatalog();
     this.promptById = new Map(this.prompts.map((p) => [p.id, p]));
     this.candidatesByPrompt.clear();
+    this.recentCandidatesByPrompt.clear();
     for (const p of this.prompts) {
       const matches = new Set<string>();
+      const recentMatches = new Set<string>();
       for (const facts of this.players.values()) {
-        if (this.matchesValidation(facts, p.validation)) matches.add(facts.key);
+        if (this.matchesValidation(facts, p.validation)) {
+          matches.add(facts.key);
+          if (this.isRecentPlayer(facts)) recentMatches.add(facts.key);
+        }
       }
       this.candidatesByPrompt.set(p.id, matches);
+      this.recentCandidatesByPrompt.set(p.id, recentMatches);
+    }
+    this.prompts = this.prompts.filter(
+      (p) => (this.recentCandidatesByPrompt.get(p.id)?.size ?? 0) >= NbaDataService.MIN_CANDIDATES_PER_PROMPT
+    );
+    this.promptById = new Map(this.prompts.map((p) => [p.id, p]));
+    const allowed = new Set(this.prompts.map((p) => p.id));
+    for (const id of [...this.candidatesByPrompt.keys()]) {
+      if (!allowed.has(id)) this.candidatesByPrompt.delete(id);
+    }
+    for (const id of [...this.recentCandidatesByPrompt.keys()]) {
+      if (!allowed.has(id)) this.recentCandidatesByPrompt.delete(id);
     }
   }
 
-  private matchesValidation(facts: PlayerFacts, validation: PromptValidation): boolean {
+  private isRecentPlayer(facts: PlayerFacts): boolean {
     const currentYear = new Date().getUTCFullYear();
-    const recentCutoffYear = currentYear - 10;
-    const hasRecentSeason = [...facts.years].some((y) => y >= recentCutoffYear);
-    if (!hasRecentSeason) return false;
+    const recentCutoffYear = currentYear - 5;
+    return [...facts.years].some((y) => y >= recentCutoffYear);
+  }
 
+  private matchesValidation(facts: PlayerFacts, validation: PromptValidation): boolean {
     const seasonEntries = [...facts.seasons.values()];
     const maxPointsGame = facts.maxPointsGame;
     const bestPpg = seasonEntries.length ? Math.max(...seasonEntries.map((s) => s.points / Math.max(1, s.games))) : 0;
@@ -908,6 +1134,7 @@ class NbaDataService {
       const p: PlayerFacts = {
         key: s.key,
         name: s.name,
+        personId: null,
         teams: new Set(s.teams),
         teamNames: new Set(),
         years: new Set(s.years),
@@ -949,6 +1176,7 @@ class NbaDataService {
       const key = normalizePersonKey(row.personId) || normalize(full);
       const p = this.getOrCreatePlayer(key, full);
       p.name = full;
+      p.personId = /^\d+$/.test(key) ? key : p.personId;
       const draftYear = Number(row.draftYear);
       const draftRound = Number(row.draftRound);
       const draftNumber = Number(row.draftNumber);
@@ -979,6 +1207,7 @@ class NbaDataService {
       if (!key || !full) continue;
       const p = this.getOrCreatePlayer(key, full);
       p.name = full;
+      p.personId = /^\d+$/.test(key) ? key : p.personId;
 
       const teamCode = normalizeTeamCode(
         (row.teamAbbreviation ?? teamNameToCode[normalize(row.playerteamName ?? row.teamName ?? "")] ?? "").trim().toUpperCase()
@@ -1036,15 +1265,13 @@ class NbaDataService {
       }
       if (!line.trim()) continue;
       const cols = parseCsvLine(line);
-      const row: Record<string, string> = {};
-      headers.forEach((h, i) => {
-        row[h] = cols[i] ?? "";
-      });
+      const row = mapCsvRow(headers, cols);
       const full = (row.full_name ?? `${row.first_name ?? ""} ${row.last_name ?? ""}`).trim();
       if (!full) continue;
       const key = normalizePersonKey(row.id) || normalize(full);
       const p = this.getOrCreatePlayer(key, full);
       p.name = full;
+      p.personId = /^\d+$/.test(key) ? key : p.personId;
       this.players.set(key, p);
       this.byName.set(normalize(full), p);
     }
@@ -1060,16 +1287,14 @@ class NbaDataService {
       }
       if (!line.trim()) continue;
       const cols = parseCsvLine(line);
-      const row: Record<string, string> = {};
-      headers.forEach((h, i) => {
-        row[h] = cols[i] ?? "";
-      });
+      const row = mapCsvRow(headers, cols);
 
       const full = `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim() || (row.display_first_last ?? "").trim();
       if (!full) continue;
       const key = normalizePersonKey(row.person_id) || normalize(full);
       const p = this.getOrCreatePlayer(key, full);
       p.name = full;
+      p.personId = /^\d+$/.test(key) ? key : p.personId;
 
       const draftYear = Number.parseInt((row.draft_year ?? "").split(".")[0] ?? "", 10);
       const draftRound = Number.parseInt((row.draft_round ?? "").split(".")[0] ?? "", 10);
@@ -1108,16 +1333,14 @@ class NbaDataService {
       }
       if (!line.trim()) continue;
       const cols = parseCsvLine(line);
-      const row: Record<string, string> = {};
-      headers.forEach((h, i) => {
-        row[h] = cols[i] ?? "";
-      });
+      const row = mapCsvRow(headers, cols);
 
       const key = normalizePersonKey(row.person_id);
       const full = (row.player_name ?? "").trim();
       if (!key || !full) continue;
       const p = this.getOrCreatePlayer(key, full);
       p.name = full;
+      p.personId = /^\d+$/.test(key) ? key : p.personId;
 
       const draftYear = Number.parseInt(row.season ?? "", 10);
       const draftRound = Number.parseInt(row.round_number ?? "", 10);
@@ -1132,6 +1355,30 @@ class NbaDataService {
     }
   }
 
+  private async augmentPersonIdsFromCommonInfo(filePath: string) {
+    const file = readline.createInterface({ input: fs.createReadStream(filePath) });
+    let headers: string[] = [];
+    for await (const line of file) {
+      if (!headers.length) {
+        headers = parseCsvLine(line);
+        continue;
+      }
+      if (!line.trim()) continue;
+      const cols = parseCsvLine(line);
+      const row = mapCsvRow(headers, cols);
+      const personId = normalizePersonKey(row.person_id ?? row.personId);
+      if (!/^\d+$/.test(personId)) continue;
+      const full =
+        `${row.first_name ?? row.firstName ?? ""} ${row.last_name ?? row.lastName ?? ""}`.trim() ||
+        (row.display_first_last ?? row.displayFirstLast ?? "").trim();
+      if (!full) continue;
+      const byName = this.byName.get(normalize(full));
+      if (byName) {
+        byName.personId = personId;
+      }
+    }
+  }
+
   private async loadGameMeta(filePath: string): Promise<Map<string, { seasonType: string; year?: number }>> {
     const map = new Map<string, { seasonType: string; year?: number }>();
     const file = readline.createInterface({ input: fs.createReadStream(filePath) });
@@ -1143,10 +1390,7 @@ class NbaDataService {
       }
       if (!line.trim()) continue;
       const cols = parseCsvLine(line);
-      const row: Record<string, string> = {};
-      headers.forEach((h, i) => {
-        row[h] = cols[i] ?? "";
-      });
+      const row = mapCsvRow(headers, cols);
       const gameId = (row.game_id ?? "").trim();
       if (!gameId) continue;
       const seasonType = (row.season_type ?? "").trim() || "Regular Season";
@@ -1181,10 +1425,7 @@ class NbaDataService {
       }
       if (!line.trim()) continue;
       const cols = parseCsvLine(line);
-      const row: Record<string, string> = {};
-      headers.forEach((h, i) => {
-        row[h] = cols[i] ?? "";
-      });
+      const row = mapCsvRow(headers, cols);
 
       const eventType = Number.parseInt(row.eventmsgtype ?? "", 10);
       const gameId = (row.game_id ?? "").trim();
@@ -1212,6 +1453,7 @@ class NbaDataService {
         if (!key || !name) return;
         const p = this.getOrCreatePlayer(key, name);
         p.name = name;
+        p.personId = /^\d+$/.test(key) ? key : p.personId;
         this.byName.set(normalize(name), p);
         if (isTrackedNbaGame && teamCode) p.teams.add(teamCode);
         if (year !== undefined) {
@@ -1303,10 +1545,7 @@ class NbaDataService {
       }
       if (!line.trim()) continue;
       const cols = parseCsvLine(line);
-      const row: Record<string, string> = {};
-      headers.forEach((h, i) => {
-        row[h] = cols[i] ?? "";
-      });
+      const row = mapCsvRow(headers, cols);
       const key = (row.player_id ?? "").trim();
       const name = (row.player ?? "").trim();
       if (!key || !name) continue;

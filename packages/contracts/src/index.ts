@@ -39,6 +39,12 @@ export interface MatchMove {
   playedAt: number;
 }
 
+export interface ClaimedAnswer {
+  key: string;
+  name: string;
+  headshotUrl: string | null;
+}
+
 export interface MatchSnapshot {
   matchId: string;
   roomCode?: string;
@@ -46,7 +52,7 @@ export interface MatchSnapshot {
   board: (PlayerSymbol | null)[];
   rowChallenges: string[];
   colChallenges: string[];
-  usedAnswers: string[];
+  usedAnswers: ClaimedAnswer[];
   boardVariant: BoardVariant;
   turn: PlayerSymbol;
   winner: PlayerSymbol | "draw" | null;
@@ -88,6 +94,8 @@ export interface ServerToClientEvents {
   "game:timerTick": (payload: { remainingPerMove: number | null; remainingPerGame: Record<PlayerSymbol, number> }) => void;
   "game:turnTimeout": (payload: { timedOut: PlayerSymbol; nextTurn: PlayerSymbol }) => void;
   "game:over": (payload: { winner: PlayerSymbol | "draw"; reason: "board" | "timeout" | "forfeit" }) => void;
+  "game:rematchRequested": (payload: { fromUserId: string; fromUsername: string }) => void;
+  "game:rematchResponse": (payload: { byUserId: string; byUsername: string; accepted: boolean }) => void;
   "game:ratingDelta": (payload: { userId: string; delta: number; newRating: number }[]) => void;
   "reconnect:countdown": (payload: { userId: string; deadline: number }) => void;
 }
@@ -104,6 +112,8 @@ export interface ClientToServerEvents {
   "room:settings": (payload: { userId: string; roomCode: string; settings: RoomSettings }) => void;
   "game:move": (payload: { userId: string; roomCode: string; index: number; answer?: string }) => void;
   "game:surrender": (payload: { userId: string; roomCode: string }) => void;
+  "game:rematchRequest": (payload: { userId: string; roomCode: string }) => void;
+  "game:rematchRespond": (payload: { userId: string; roomCode: string; accepted: boolean }) => void;
   "game:rematch": (payload: { userId: string; roomCode: string }) => void;
   "reconnect:resume": (payload: { userId: string; roomCode: string }) => void;
 }

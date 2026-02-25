@@ -11,6 +11,7 @@ export interface LiveRoom {
   socketsByUser: Map<string, string>;
   spectators: Set<string>;
   rematchVotes: Set<string>;
+  rematchRequester: string | null;
   rowChallenges: GeneratedPrompt[];
   colChallenges: GeneratedPrompt[];
   usedAnswerKeys: Set<string>;
@@ -85,6 +86,7 @@ export const createRoomState = (params: {
     socketsByUser: new Map(),
     spectators: new Set(),
     rematchVotes: new Set(),
+    rematchRequester: null,
     rowChallenges: rows,
     colChallenges: cols,
     usedAnswerKeys: new Set(),

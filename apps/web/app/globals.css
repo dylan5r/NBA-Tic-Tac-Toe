@@ -171,6 +171,21 @@ body {
   pointer-events: none;
 }
 
+@keyframes claim-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-claim-pop {
+  animation: claim-pop 220ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
