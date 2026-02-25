@@ -70,7 +70,14 @@ interface NbaCachePayload {
   }>;
 }
 
+interface BoardHistoryPayload {
+  version: number;
+  recentBoards: string[][];
+  recentPromptIds: string[];
+}
+
 const CACHE_VERSION = 4;
+const BOARD_HISTORY_VERSION = 1;
 
 export interface GeneratedPrompt {
   id: string;
@@ -262,10 +269,13 @@ class NbaDataService {
   private ready = false;
   private recentBoards: string[][] = [];
   private recentPromptIds: string[] = [];
+  private boardHistoryPath: string | null = null;
 
   async init() {
     const cwd = process.cwd();
     const dataDir = dataDirCandidates(cwd).find((p) => fs.existsSync(p));
+    this.boardHistoryPath = path.join(cwd, ".nba-board-history.v1.json");
+    this.loadRecentBoardHistory();
     if (!dataDir) {
       this.seedFallbackPlayers();
       this.buildPromptEngine();
@@ -274,6 +284,8 @@ class NbaDataService {
     }
 
     const rootDir = path.basename(dataDir).toLowerCase() === "csv" ? path.dirname(dataDir) : dataDir;
+    this.boardHistoryPath = path.join(rootDir, ".nba-board-history.v1.json");
+    this.loadRecentBoardHistory();
 
     const bbrefPerGamePath = this.firstExistingPath(rootDir, ["Player Per Game.csv"]);
     const bbrefSeasonInfoPath = this.firstExistingPath(rootDir, ["Player Season Info.csv"]);
@@ -672,9 +684,14 @@ class NbaDataService {
     const avoidLastBoards = new Set(this.recentBoards.flat());
     const withoutRecent = pool.filter((p) => !recent.has(p.id) && !avoidLastBoards.has(p.id));
     const withoutLastBoards = pool.filter((p) => !avoidLastBoards.has(p.id));
-    const source = withoutRecent.length >= target ? withoutRecent : withoutLastBoards.length >= target ? withoutLastBoards : pool;
+    let source = withoutRecent.length >= target ? withoutRecent : withoutLastBoards.length >= target ? withoutLastBoards : pool;
+    const coldStart = this.recentPromptIds.length === 0;
+    if (coldStart && source.length > target * 2) {
+      const keepCount = Math.max(target * 2, Math.floor(source.length * 0.7));
+      source = this.shuffle(source).slice(0, keepCount);
+    }
 
-    const deterministic = this.findCompatibleGrid(source, side, minIntersection);
+    const deterministic = (!coldStart || Math.random() < 0.4) ? this.findCompatibleGrid(source, side, minIntersection) : null;
     if (deterministic) return deterministic;
 
     for (let attempt = 0; attempt < 1000; attempt += 1) {
@@ -1043,6 +1060,37 @@ class NbaDataService {
     this.recentBoards.unshift(promptIds);
     this.recentBoards = this.recentBoards.slice(0, 5);
     this.recentPromptIds = [...promptIds, ...this.recentPromptIds].slice(0, 20 * 9);
+    this.writeRecentBoardHistory();
+  }
+
+  private loadRecentBoardHistory() {
+    try {
+      if (!this.boardHistoryPath || !fs.existsSync(this.boardHistoryPath)) return;
+      const raw = fs.readFileSync(this.boardHistoryPath, "utf8");
+      const parsed = JSON.parse(raw) as BoardHistoryPayload;
+      if (parsed.version !== BOARD_HISTORY_VERSION) return;
+      if (!Array.isArray(parsed.recentBoards) || !Array.isArray(parsed.recentPromptIds)) return;
+      this.recentBoards = parsed.recentBoards
+        .filter((row): row is string[] => Array.isArray(row) && row.every((x) => typeof x === "string"))
+        .slice(0, 5);
+      this.recentPromptIds = parsed.recentPromptIds.filter((x): x is string => typeof x === "string").slice(0, 20 * 9);
+    } catch {
+      // best effort only
+    }
+  }
+
+  private writeRecentBoardHistory() {
+    try {
+      if (!this.boardHistoryPath) return;
+      const payload: BoardHistoryPayload = {
+        version: BOARD_HISTORY_VERSION,
+        recentBoards: this.recentBoards.slice(0, 5),
+        recentPromptIds: this.recentPromptIds.slice(0, 20 * 9)
+      };
+      fs.writeFileSync(this.boardHistoryPath, JSON.stringify(payload));
+    } catch {
+      // best effort only
+    }
   }
 
   private buildPromptEngine() {

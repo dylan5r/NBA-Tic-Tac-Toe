@@ -8,6 +8,23 @@ export interface TileClaim {
   headshotUrl?: string | null;
 }
 
+function MarkBackdrop({ symbol }: { symbol: "X" | "O" }) {
+  return (
+    <span
+      className={clsx(
+        "material-symbols-outlined pointer-events-none absolute left-1/2 top-1/2 z-0 -translate-x-1/2 -translate-y-1/2 leading-none",
+        symbol === "X" ? "text-[min(30vw,280px)]" : "text-[min(22vw,200px)]",
+        symbol === "X"
+          ? "text-blue-400/72 [text-shadow:0_0_18px_rgba(59,130,246,0.7)]"
+          : "text-[#f97316]/72 [text-shadow:0_0_18px_rgba(249,115,22,0.7)]"
+      )}
+      aria-hidden="true"
+    >
+      {symbol === "X" ? "close" : "circle"}
+    </span>
+  );
+}
+
 export const GameBoard = ({
   board,
   rowLabels,
@@ -31,8 +48,7 @@ export const GameBoard = ({
   size?: 3 | 4;
   compact?: boolean;
 }) => {
-  const fallbackImageUrl = (name: string, seed: string) =>
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&size=256&background=1f2937&color=f8fafc&bold=true&rounded=true&format=png&seed=${encodeURIComponent(seed)}`;
+  const defaultAvatarUrl = "/images/default-player-avatar.png";
 
   const winLine = useMemo(() => {
     const lines =
@@ -121,7 +137,7 @@ export const GameBoard = ({
                   const col = idx % size;
                   const coord = `${String.fromCharCode(65 + row)}${col + 1}`;
                   const answer = cellAnswersByIndex?.[idx];
-                  const answerImage = answer ? answer.headshotUrl || fallbackImageUrl(answer.name, `${idx}`) : null;
+                  const answerImage = answer ? answer.headshotUrl || defaultAvatarUrl : undefined;
                   return (
                     <button
                       key={idx}
@@ -146,32 +162,23 @@ export const GameBoard = ({
                           {hoverSymbol === "X" ? "close" : "circle"}
                         </span>
                       )}
-                      {answer && answerImage && (
+                      {answer && (
                         <div className="animate-claim-pop absolute inset-0">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
+                          {value && <MarkBackdrop symbol={value} />}
                           <img
                             src={answerImage}
                             alt={answer.name}
-                            className="h-full w-full object-cover opacity-90"
+                            className="relative z-10 h-full w-full object-cover opacity-72"
                             onError={(e) => {
                               const img = e.currentTarget as HTMLImageElement;
-                              const fb = fallbackImageUrl(answer.name, `${idx}-fb`);
+                              const fb = defaultAvatarUrl;
                               if (img.src !== fb) img.src = fb;
                             }}
                           />
-                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-black/10 p-2">
+                          <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/85 to-black/10 p-2">
                             <span className="line-clamp-2 text-center text-[10px] font-semibold text-white">{answer.name}</span>
                           </div>
-                          <span
-                            className={clsx(
-                              "material-symbols-outlined pointer-events-none absolute inset-0 grid place-items-center text-[112px] leading-none",
-                              value === "X"
-                                ? "text-blue-400/95 [text-shadow:0_0_16px_rgba(59,130,246,0.65)]"
-                                : "text-[#f97316]/95 [text-shadow:0_0_16px_rgba(249,115,22,0.65)]"
-                            )}
-                          >
-                            {value === "X" ? "close" : "circle"}
-                          </span>
                         </div>
                       )}
                       <span className="absolute bottom-2 right-2 font-mono text-[10px] text-[#a3a3a3] opacity-50">{coord}</span>
@@ -205,7 +212,7 @@ export const GameBoard = ({
                 const col = idx % size;
                 const coord = `${String.fromCharCode(65 + row)}${col + 1}`;
                 const answer = cellAnswersByIndex?.[idx];
-                const answerImage = answer ? answer.headshotUrl || fallbackImageUrl(answer.name, `${idx}`) : null;
+                const answerImage = answer ? answer.headshotUrl || defaultAvatarUrl : undefined;
                 return (
                   <button
                     key={idx}
@@ -226,32 +233,23 @@ export const GameBoard = ({
                         {hoverSymbol === "X" ? "close" : "circle"}
                       </span>
                     )}
-                    {answer && answerImage && (
+                    {answer && (
                       <div className="animate-claim-pop absolute inset-0">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
+                        {value && <MarkBackdrop symbol={value} />}
                         <img
                           src={answerImage}
                           alt={answer.name}
-                          className="h-full w-full object-cover opacity-90"
+                          className="relative z-10 h-full w-full object-cover opacity-72"
                           onError={(e) => {
                             const img = e.currentTarget as HTMLImageElement;
-                            const fb = fallbackImageUrl(answer.name, `${idx}-fb`);
+                            const fb = defaultAvatarUrl;
                             if (img.src !== fb) img.src = fb;
                           }}
                         />
-                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-black/10 p-1.5">
+                        <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/85 to-black/10 p-1.5">
                           <span className="line-clamp-2 text-center text-[9px] font-semibold text-white">{answer.name}</span>
                         </div>
-                        <span
-                          className={clsx(
-                            "material-symbols-outlined pointer-events-none absolute inset-0 grid place-items-center text-[86px] leading-none",
-                            value === "X"
-                              ? "text-blue-400/95 [text-shadow:0_0_14px_rgba(59,130,246,0.65)]"
-                              : "text-[#f97316]/95 [text-shadow:0_0_14px_rgba(249,115,22,0.65)]"
-                          )}
-                        >
-                          {value === "X" ? "close" : "circle"}
-                        </span>
                       </div>
                     )}
                     <span className="absolute bottom-1 right-1 font-mono text-[9px] text-[#a3a3a3] opacity-50">{coord}</span>
@@ -292,30 +290,49 @@ export const GameBoard = ({
             ))}
           </div>
           <div className="court-stage relative grid gap-2 p-3" style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))` }} role="grid" aria-label="NBA Tic-Tac-Toe board">
-            {board.map((value, idx) => (
-              <button
-                key={idx}
-                type="button"
-                className={clsx(
-                  "focusable group relative aspect-square rounded-2xl border border-white/20 bg-black/25 text-5xl font-black transition duration-200 ease-out",
-                  "hover:-translate-y-0.5 hover:border-orange-200/70 hover:shadow-glowOrange",
-                  disabled && "cursor-not-allowed opacity-80"
-                )}
-                onClick={() => onCell(idx)}
-                disabled={disabled || value !== null}
-                aria-label={`Cell ${idx + 1}`}
-              >
-                <span className="relative z-10 transition group-active:scale-110">
-                  {value === "X" && <span className="material-symbols-outlined text-6xl text-blue-500">close</span>}
-                  {value === "O" && <span className="material-symbols-outlined text-6xl text-[#f97316]">circle</span>}
-                </span>
-                {cellAnswersByIndex?.[idx] && (
-                  <span className="absolute left-2 right-2 top-2 line-clamp-2 text-center text-[10px] text-white/90">
-                    {cellAnswersByIndex[idx]?.name}
-                  </span>
-                )}
-              </button>
-            ))}
+            {board.map((value, idx) => {
+              const answer = cellAnswersByIndex?.[idx];
+              const answerImage = answer ? answer.headshotUrl || defaultAvatarUrl : undefined;
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  className={clsx(
+                    "focusable group relative aspect-square overflow-hidden rounded-2xl border border-white/20 bg-black/25 text-5xl font-black transition duration-200 ease-out",
+                    "hover:-translate-y-0.5 hover:border-orange-200/70 hover:shadow-glowOrange",
+                    disabled && "cursor-not-allowed opacity-80"
+                  )}
+                  onClick={() => onCell(idx)}
+                  disabled={disabled || value !== null}
+                  aria-label={`Cell ${idx + 1}`}
+                >
+                  {answer ? (
+                    <div className="absolute inset-0">
+                      {value && <MarkBackdrop symbol={value} />}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={answerImage}
+                        alt={answer.name}
+                        className="relative z-10 h-full w-full object-cover opacity-72"
+                        onError={(e) => {
+                          const img = e.currentTarget as HTMLImageElement;
+                          const fb = defaultAvatarUrl;
+                          if (img.src !== fb) img.src = fb;
+                        }}
+                      />
+                      <span className="absolute inset-x-0 bottom-0 z-20 line-clamp-2 bg-gradient-to-t from-black/85 to-black/10 px-2 py-1 text-center text-[10px] text-white/95">
+                        {answer.name}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="relative z-10 transition group-active:scale-110">
+                      {value === "X" && <span className="material-symbols-outlined text-6xl text-blue-500">close</span>}
+                      {value === "O" && <span className="material-symbols-outlined text-6xl text-[#f97316]">circle</span>}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
             {winLine && lineStyle && (
               <div className="pointer-events-none absolute h-1 origin-left rounded-full bg-gradient-to-r from-orange-300 to-red-400 shadow-glowOrange" style={lineStyle} />
             )}

@@ -13,7 +13,7 @@ const LOCAL_MATCH_CONFIG_KEY = "nba_ttt_local_match_config_v1";
 const baseSettings: RoomSettings = {
   seriesLength: 3,
   timerMode: "per_move",
-  perMoveSeconds: 10,
+  perMoveSeconds: 30,
   perGameSeconds: 60,
   boardVariant: "3x3",
   drawMode: "ignore",
@@ -31,12 +31,17 @@ function SetupPageContent() {
   const [side, setSide] = useState<"X" | "O">("X");
   const [settings, setSettings] = useState<RoomSettings>(baseSettings);
   const [perMoveInput, setPerMoveInput] = useState(String(baseSettings.perMoveSeconds));
+  const [perGameInput, setPerGameInput] = useState(String(baseSettings.perGameSeconds));
   const [roomCode, setRoomCode] = useState("");
   const [status, setStatus] = useState("");
 
   useEffect(() => {
     setPerMoveInput(String(settings.perMoveSeconds));
   }, [settings.perMoveSeconds]);
+
+  useEffect(() => {
+    setPerGameInput(String(settings.perGameSeconds));
+  }, [settings.perGameSeconds]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -67,6 +72,7 @@ function SetupPageContent() {
         seriesLength: settings.seriesLength,
         timerMode: settings.timerMode,
         perMoveSeconds: settings.perMoveSeconds,
+        perGameSeconds: settings.perGameSeconds,
         boardVariant: settings.boardVariant
       }
     };
@@ -137,28 +143,55 @@ function SetupPageContent() {
               </select>
             </label>
 
-            <label className="text-xs uppercase tracking-[0.12em] text-slate-300">
-              PER-MOVE SECONDS
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={perMoveInput}
-                onChange={(e) => {
-                  const digits = e.target.value.replace(/\D/g, "");
-                  const normalized = digits.replace(/^0+(?=\d)/, "");
-                  setPerMoveInput(normalized);
-                  setSettings({ ...settings, perMoveSeconds: normalized ? Number(normalized) : 0 });
-                }}
-                onBlur={() => {
-                  if (!perMoveInput || Number(perMoveInput) <= 0) {
-                    setPerMoveInput("10");
-                    setSettings({ ...settings, perMoveSeconds: 10 });
-                  }
-                }}
-                className="focusable mt-2 w-full rounded-xl border border-[#2a2a2a] bg-[#121212] p-3 text-sm"
-              />
-            </label>
+            {settings.timerMode === "per_move" && (
+              <label className="text-xs uppercase tracking-[0.12em] text-slate-300">
+                PER-MOVE SECONDS
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={perMoveInput}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, "");
+                    const normalized = digits.replace(/^0+(?=\d)/, "");
+                    setPerMoveInput(normalized);
+                    setSettings({ ...settings, perMoveSeconds: normalized ? Number(normalized) : 0 });
+                  }}
+                  onBlur={() => {
+                    if (!perMoveInput || Number(perMoveInput) <= 0) {
+                      setPerMoveInput("30");
+                      setSettings({ ...settings, perMoveSeconds: 30 });
+                    }
+                  }}
+                  className="focusable mt-2 w-full rounded-xl border border-[#2a2a2a] bg-[#121212] p-3 text-sm"
+                />
+              </label>
+            )}
+
+            {settings.timerMode === "per_game" && (
+              <label className="text-xs uppercase tracking-[0.12em] text-slate-300">
+                PER-GAME SECONDS
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={perGameInput}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, "");
+                    const normalized = digits.replace(/^0+(?=\d)/, "");
+                    setPerGameInput(normalized);
+                    setSettings({ ...settings, perGameSeconds: normalized ? Number(normalized) : 0 });
+                  }}
+                  onBlur={() => {
+                    if (!perGameInput || Number(perGameInput) < 10) {
+                      setPerGameInput("60");
+                      setSettings({ ...settings, perGameSeconds: 60 });
+                    }
+                  }}
+                  className="focusable mt-2 w-full rounded-xl border border-[#2a2a2a] bg-[#121212] p-3 text-sm"
+                />
+              </label>
+            )}
 
             <label className="text-xs uppercase tracking-[0.12em] text-slate-300">
               BOARD

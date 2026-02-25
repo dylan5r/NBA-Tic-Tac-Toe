@@ -22,7 +22,8 @@ const LOCAL_DEFAULTS = {
   aiDifficulty: "hard" as Difficulty,
   localSeriesLength: 3 as 1 | 3 | 5,
   timerMode: "per_move" as "none" | "per_move" | "per_game",
-  localPerMove: 10,
+  localPerMove: 30,
+  localPerGame: 60,
   localBoardVariant: "3x3" as "3x3" | "4x4"
 };
 
@@ -37,6 +38,7 @@ export default function MatchPage() {
     mode: string;
     timerMode: "none" | "per_move" | "per_game";
     localPerMove: number;
+    localPerGame: number;
     playerSide: "X" | "O";
     aiDifficulty: Difficulty;
     localSeriesLength: number;
@@ -49,6 +51,7 @@ export default function MatchPage() {
     let aiDifficulty: Difficulty = LOCAL_DEFAULTS.aiDifficulty;
     let localSeriesLength: 1 | 3 | 5 = LOCAL_DEFAULTS.localSeriesLength;
     let localPerMove = LOCAL_DEFAULTS.localPerMove;
+    let localPerGame = LOCAL_DEFAULTS.localPerGame;
     let localBoardVariant: "3x3" | "4x4" = LOCAL_DEFAULTS.localBoardVariant;
 
     if (id === "local") {
@@ -63,6 +66,7 @@ export default function MatchPage() {
               seriesLength?: number;
               timerMode?: string;
               perMoveSeconds?: number;
+              perGameSeconds?: number;
               boardVariant?: string;
             };
           };
@@ -86,6 +90,10 @@ export default function MatchPage() {
             Number.isFinite(parsed.settings?.perMoveSeconds) && (parsed.settings?.perMoveSeconds ?? 0) > 0
               ? Math.floor(parsed.settings!.perMoveSeconds!)
               : LOCAL_DEFAULTS.localPerMove;
+          localPerGame =
+            Number.isFinite(parsed.settings?.perGameSeconds) && (parsed.settings?.perGameSeconds ?? 0) >= 10
+              ? Math.floor(parsed.settings!.perGameSeconds!)
+              : LOCAL_DEFAULTS.localPerGame;
           localBoardVariant = parsed.settings?.boardVariant === "4x4" ? "4x4" : "3x3";
         } else {
           mode = LOCAL_DEFAULTS.mode;
@@ -102,6 +110,7 @@ export default function MatchPage() {
       mode,
       timerMode,
       localPerMove,
+      localPerGame,
       playerSide,
       aiDifficulty,
       localSeriesLength,

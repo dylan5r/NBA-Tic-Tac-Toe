@@ -22,7 +22,7 @@ export interface LiveRoom {
 export const defaultSettings: RoomSettings = {
   seriesLength: 3,
   timerMode: "per_move",
-  perMoveSeconds: 10,
+  perMoveSeconds: 30,
   perGameSeconds: 60,
   boardVariant: "3x3",
   drawMode: "ignore",
