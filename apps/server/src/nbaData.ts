@@ -668,7 +668,11 @@ class NbaDataService {
   private generateBalancedGrid(side: 3 | 4, minIntersection: number): { rows: GeneratedPrompt[]; cols: GeneratedPrompt[] } {
     const target = side * 2;
     const pool = this.prompts.filter((p) => (this.recentCandidatesByPrompt.get(p.id)?.size ?? 0) >= minIntersection);
-    const source = pool;
+    const recent = new Set(this.recentPromptIds);
+    const avoidLastBoards = new Set(this.recentBoards.flat());
+    const withoutRecent = pool.filter((p) => !recent.has(p.id) && !avoidLastBoards.has(p.id));
+    const withoutLastBoards = pool.filter((p) => !avoidLastBoards.has(p.id));
+    const source = withoutRecent.length >= target ? withoutRecent : withoutLastBoards.length >= target ? withoutLastBoards : pool;
 
     const deterministic = this.findCompatibleGrid(source, side, minIntersection);
     if (deterministic) return deterministic;
@@ -770,14 +774,17 @@ class NbaDataService {
     );
     const ordered = ids.slice().sort((a, b) => (rowPriority.get(b) ?? 0) - (rowPriority.get(a) ?? 0));
 
+    const solutions: Array<{ rows: GeneratedPrompt[]; cols: GeneratedPrompt[] }> = [];
+    const maxSolutions = 12;
+
     const recurse = (
       startIndex: number,
       rowIds: string[],
       colCandidates: Set<string>
-    ): { rows: GeneratedPrompt[]; cols: GeneratedPrompt[] } | null => {
+    ): boolean => {
       if (rowIds.length === side) {
         const rowPrompts = rowIds.map((id) => byId.get(id)).filter((x): x is GeneratedPrompt => Boolean(x));
-        if (rowPrompts.length !== side) return null;
+        if (rowPrompts.length !== side) return false;
         const usedKinds = new Set(
           rowPrompts.filter((p) => !this.allowsDuplicateArchetype(p)).map((p) => this.promptArchetype(p))
         );
@@ -797,9 +804,12 @@ class NbaDataService {
           if (!this.allowsDuplicateArchetype(prompt)) usedKinds.add(kind);
           if (cols.length === side) break;
         }
-        if (cols.length !== side) return null;
-        if (this.gridMeetsMinimumIntersections(rowPrompts, cols, minIntersection) && this.gridHasUniquePromptArchetypes(rowPrompts, cols)) return { rows: rowPrompts, cols };
-        return null;
+        if (cols.length !== side) return false;
+        if (this.gridMeetsMinimumIntersections(rowPrompts, cols, minIntersection) && this.gridHasUniquePromptArchetypes(rowPrompts, cols)) {
+          solutions.push({ rows: rowPrompts, cols });
+          return solutions.length >= maxSolutions;
+        }
+        return false;
       }
 
       for (let i = startIndex; i < ordered.length; i += 1) {
@@ -808,14 +818,16 @@ class NbaDataService {
         const compat = compatibility.get(candidateId) ?? new Set<string>();
         const nextCols = new Set<string>([...colCandidates].filter((id) => compat.has(id) && !rowIds.includes(id) && id !== candidateId));
         if (nextCols.size < side) continue;
-        const found = recurse(i + 1, [...rowIds, candidateId], nextCols);
-        if (found) return found;
+        const shouldStop = recurse(i + 1, [...rowIds, candidateId], nextCols);
+        if (shouldStop) return true;
       }
 
-      return null;
+      return false;
     };
 
-    return recurse(0, [], new Set(ids));
+    recurse(0, [], new Set(ids));
+    if (!solutions.length) return null;
+    return solutions[Math.floor(Math.random() * solutions.length)] ?? null;
   }
 
   private generateStrictGridFromTop(
