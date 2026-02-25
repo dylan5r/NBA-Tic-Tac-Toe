@@ -57,7 +57,7 @@ export default function RoomPage() {
 
   if (!snapshot) {
     return (
-      <main className="grid min-h-screen place-items-center bg-background-dark p-4">
+      <main className="grid min-h-screen place-items-center bg-[#121212] p-4">
         <section className="surface w-full max-w-xl rounded-2xl p-8 text-center">
           <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-400">Private Matchmaking</p>
           <p className="mt-2 text-2xl font-black uppercase tracking-tight text-white">Joining room...</p>
@@ -67,7 +67,7 @@ export default function RoomPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background-dark text-slate-100">
+    <main className="min-h-screen bg-[#121212] text-slate-100">
       <header className="nav-shell sticky top-0 z-30">
         <div className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-4 md:px-6">
           <div>
@@ -83,10 +83,10 @@ export default function RoomPage() {
           <h2 className="text-2xl font-black uppercase tracking-tight">Players</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {snapshot.players.map((p) => (
-              <article key={p.userId} className="rounded-xl border border-white/10 bg-black/25 p-4">
+              <article key={p.userId} className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-4">
                 <p className="text-2xl font-black uppercase tracking-tight">{p.username}</p>
                 <p className="mt-1 text-xs text-slate-300">Side {p.symbol ?? "?"}</p>
-                <p className={`mt-3 inline-flex rounded-md border px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${p.ready ? "border-emerald-300/40 bg-emerald-500/20 text-emerald-200" : "border-white/20 bg-black/25 text-slate-300"}`}>
+                <p className={`mt-3 inline-flex rounded-md border px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${p.ready ? "border-emerald-300/40 bg-emerald-500/20 text-emerald-200" : "border-[#2a2a2a] bg-[#121212] text-slate-300"}`}>
                   {p.ready ? "Ready" : "Not Ready"}
                 </p>
               </article>
@@ -110,7 +110,7 @@ export default function RoomPage() {
               <select
                 value={snapshot.settings.seriesLength}
                 onChange={(e) => updateSetting({ seriesLength: Number(e.target.value) as 1 | 3 | 5 })}
-                className="focusable mt-2 w-full rounded-xl border border-white/20 bg-black/35 p-3 text-sm"
+                className="focusable mt-2 w-full rounded-xl border border-[#2a2a2a] bg-[#121212] p-3 text-sm"
               >
                 <option value={1}>BEST OF 1</option>
                 <option value={3}>BEST OF 3</option>
@@ -123,7 +123,7 @@ export default function RoomPage() {
               <select
                 value={snapshot.settings.boardSkin}
                 onChange={(e) => updateSetting({ boardSkin: e.target.value as RoomSettings["boardSkin"] })}
-                className="focusable mt-2 w-full rounded-xl border border-white/20 bg-black/35 p-3 text-sm"
+                className="focusable mt-2 w-full rounded-xl border border-[#2a2a2a] bg-[#121212] p-3 text-sm"
               >
                 <option value="classic">CLASSIC</option>
                 <option value="arena">ARENA</option>

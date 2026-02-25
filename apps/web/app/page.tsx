@@ -27,7 +27,7 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background-light text-slate-900 dark:bg-background-dark dark:text-slate-100">
+    <div className="min-h-screen bg-[#121212] text-slate-100">
       <nav className="sticky top-0 z-50 w-full nav-shell">
         <div className="mx-auto flex h-20 w-full max-w-[1280px] items-center justify-between px-6">
           <div className="flex items-center gap-3">
@@ -38,12 +38,12 @@ export default function LandingPage() {
           </div>
           <div className="hidden items-center gap-10 md:flex">
             <Link className="border-b-2 border-[#ee8c2b] pb-1 text-sm font-semibold" href="/">Play</Link>
-            <Link className="pb-1 text-sm font-semibold text-slate-400 hover:text-[#ee8c2b]" href="/leaderboard">Leaderboard</Link>
-            <Link className="pb-1 text-sm font-semibold text-slate-400 hover:text-[#ee8c2b]" href="/profile">Profile</Link>
-            <button className="pb-1 text-sm font-semibold text-slate-400 hover:text-[#ee8c2b]" onClick={() => setSettingsOpen(true)}>Settings</button>
+            <Link className="pb-1 text-sm font-semibold text-slate-300 hover:text-[#ee8c2b]" href="/leaderboard">Leaderboard</Link>
+            <Link className="pb-1 text-sm font-semibold text-slate-300 hover:text-[#ee8c2b]" href="/profile">Profile</Link>
+            <button className="pb-1 text-sm font-semibold text-slate-300 hover:text-[#ee8c2b]" onClick={() => setSettingsOpen(true)}>Settings</button>
           </div>
           <div className="flex items-center gap-4">
-            <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-400 md:flex">
+            <div className="hidden items-center gap-2 rounded-full border border-[#2a2a2a] bg-[#1a1a1a] px-3 py-2 text-sm text-slate-400 md:flex">
               <span className="material-symbols-outlined text-base">search</span>
               Search player...
             </div>
@@ -67,7 +67,7 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-col justify-center gap-4 sm:flex-row">
               <Link href="/setup?mode=online_unranked"><UIButton size="lg">Play Now</UIButton></Link>
-              <UIButton size="lg" variant="secondary" onClick={() => setRulesOpen(true)}>View Rankings</UIButton>
+              <Link href="/leaderboard"><UIButton size="lg" variant="secondary">View Rankings</UIButton></Link>
             </div>
           </div>
         </section>
@@ -93,14 +93,14 @@ export default function LandingPage() {
           <div className="mt-8 rounded-xl border border-white/10 bg-white/5 p-6">
             <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[#ee8c2b]">Quick Login</p>
             {user ? (
-              <p className="text-sm">Signed in as <span className="font-bold">{user.username}</span> • Elo {user.rating}</p>
+              <p className="text-sm text-slate-200">Signed in as <span className="font-bold text-white">{user.username}</span> • Elo {user.rating}</p>
             ) : (
               <div className="flex flex-col gap-3 sm:flex-row">
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Enter username"
-                  className="focusable w-full rounded-lg border border-white/20 bg-black/30 px-3 py-3 text-sm"
+                  className="focusable w-full rounded-lg border border-[#2a2a2a] bg-[#121212] px-3 py-3 text-sm text-white"
                 />
                 <UIButton onClick={createGuest}>Continue</UIButton>
               </div>

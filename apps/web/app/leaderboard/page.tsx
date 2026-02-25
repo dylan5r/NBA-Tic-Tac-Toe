@@ -22,8 +22,8 @@ export default function LeaderboardPage() {
   }, [scope]);
 
   return (
-    <div className="min-h-screen bg-background-light text-slate-900 dark:bg-background-dark dark:text-slate-100">
-      <header className="border-b border-[#ee8c2b]/20 bg-background-dark sticky top-0 z-50">
+    <div className="min-h-screen bg-[#121212] text-slate-100">
+      <header className="sticky top-0 z-50 border-b border-[#2a2a2a] bg-[#121212]">
         <div className="mx-auto flex h-16 w-full max-w-[1200px] items-center justify-between px-6">
           <div className="flex items-center gap-12">
             <div className="flex items-center gap-3 cursor-pointer">
@@ -31,14 +31,14 @@ export default function LeaderboardPage() {
               <h1 className="text-xl font-bold uppercase tracking-tight">NBA <span className="text-[#ee8c2b]">TTT</span></h1>
             </div>
             <nav className="hidden md:flex items-center gap-8">
-              <a className="text-sm font-semibold uppercase tracking-wider text-slate-400 hover:text-[#ee8c2b]" href="#">Play</a>
+              <a className="text-sm font-semibold uppercase tracking-wider text-slate-300 hover:text-[#ee8c2b]" href="#">Play</a>
               <a className="text-sm font-semibold uppercase tracking-wider text-[#ee8c2b] border-b-2 border-[#ee8c2b] py-5" href="#">Leaderboard</a>
-              <a className="text-sm font-semibold uppercase tracking-wider text-slate-400 hover:text-[#ee8c2b]" href="#">Stats</a>
+              <a className="text-sm font-semibold uppercase tracking-wider text-slate-300 hover:text-[#ee8c2b]" href="#">Stats</a>
             </nav>
           </div>
           <div className="flex items-center gap-2">
-            <button className="rounded-lg bg-slate-100 dark:bg-[#1f1812] px-4 py-2 text-xs font-bold uppercase tracking-wider" onClick={() => setScope("global")}>Monthly</button>
-            <button className="rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-400" onClick={() => setScope("weekly")}>Weekly</button>
+            <button className={`rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider ${scope === "global" ? "bg-[#ee8c2b] text-[#221910]" : "bg-[#1e1e1e] text-slate-300 border border-[#2a2a2a]"}`} onClick={() => setScope("global")}>Monthly</button>
+            <button className={`rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider ${scope === "weekly" ? "bg-[#ee8c2b] text-[#221910]" : "bg-[#1e1e1e] text-slate-300 border border-[#2a2a2a]"}`} onClick={() => setScope("weekly")}>Weekly</button>
           </div>
         </div>
       </header>
@@ -47,14 +47,14 @@ export default function LeaderboardPage() {
         <div className="mb-10 flex flex-col md:flex-row justify-between items-end gap-4">
           <div>
             <h2 className="text-4xl font-black uppercase tracking-tighter">Global Rankings</h2>
-            <p className="mt-2 text-sm text-slate-500">Live leaderboard updates</p>
+            <p className="mt-2 text-sm text-slate-400">Live leaderboard updates</p>
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-[#ee8c2b]/10 bg-white dark:bg-[#1f1812] shadow-xl shadow-black/20">
+        <div className="overflow-hidden rounded-xl border border-[#2a2a2a] bg-[#1e1e1e] shadow-xl shadow-black/30">
           <table className="w-full border-collapse text-left">
             <thead>
-              <tr className="border-b border-slate-200 dark:border-[#ee8c2b]/10 bg-slate-50 dark:bg-white/5">
+              <tr className="border-b border-[#2a2a2a] bg-[#161616]">
                 <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-slate-500">Rank</th>
                 <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-slate-500">Username</th>
                 <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-slate-500 text-right">Rating</th>
@@ -62,7 +62,7 @@ export default function LeaderboardPage() {
                 <th className="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-slate-500 text-right">Win %</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-[#ee8c2b]/5">
+            <tbody className="divide-y divide-[#2a2a2a]">
               {rows.map((r, i) => {
                 const total = r.wins + r.losses;
                 const pct = total > 0 ? Math.round((r.wins / total) * 100) : 0;

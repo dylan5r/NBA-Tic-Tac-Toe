@@ -18,7 +18,7 @@ export const UIButton = ({
       "focusable inline-flex items-center justify-center rounded-lg font-bold uppercase tracking-tight transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-50",
       size === "lg" ? "px-10 py-4 text-lg" : "px-4 py-2 text-sm",
       variant === "primary" && "bg-[#ee8c2b] text-[#221910] hover:bg-[#da7d22]",
-      variant === "secondary" && "bg-white/10 border border-white/20 text-white hover:bg-white/15",
+      variant === "secondary" && "bg-[#1e1e1e] border border-[#2a2a2a] text-white hover:bg-[#262626]",
       variant === "danger" && "bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20",
       className
     )}

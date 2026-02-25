@@ -96,7 +96,7 @@ function SetupPageContent() {
   };
 
   return (
-    <main className="min-h-screen bg-background-dark text-slate-100">
+    <main className="min-h-screen bg-[#121212] text-slate-100">
       <header className="nav-shell sticky top-0 z-30">
         <div className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-4 md:px-6">
           <div>
@@ -114,7 +114,7 @@ function SetupPageContent() {
             <label className="text-xs uppercase tracking-[0.12em] text-slate-300">
               SERIES
               <select
-                className="focusable mt-2 w-full rounded-xl border border-white/20 bg-black/35 p-3 text-sm"
+                className="focusable mt-2 w-full rounded-xl border border-[#2a2a2a] bg-[#121212] p-3 text-sm"
                 value={settings.seriesLength}
                 onChange={(e) => setSettings({ ...settings, seriesLength: Number(e.target.value) as 1 | 3 | 5 })}
               >
@@ -127,7 +127,7 @@ function SetupPageContent() {
             <label className="text-xs uppercase tracking-[0.12em] text-slate-300">
               TIMER MODE
               <select
-                className="focusable mt-2 w-full rounded-xl border border-white/20 bg-black/35 p-3 text-sm"
+                className="focusable mt-2 w-full rounded-xl border border-[#2a2a2a] bg-[#121212] p-3 text-sm"
                 value={settings.timerMode}
                 onChange={(e) => setSettings({ ...settings, timerMode: e.target.value as RoomSettings["timerMode"] })}
               >
@@ -156,14 +156,14 @@ function SetupPageContent() {
                     setSettings({ ...settings, perMoveSeconds: 10 });
                   }
                 }}
-                className="focusable mt-2 w-full rounded-xl border border-white/20 bg-black/35 p-3 text-sm"
+                className="focusable mt-2 w-full rounded-xl border border-[#2a2a2a] bg-[#121212] p-3 text-sm"
               />
             </label>
 
             <label className="text-xs uppercase tracking-[0.12em] text-slate-300">
               BOARD
               <select
-                className="focusable mt-2 w-full rounded-xl border border-white/20 bg-black/35 p-3 text-sm"
+                className="focusable mt-2 w-full rounded-xl border border-[#2a2a2a] bg-[#121212] p-3 text-sm"
                 value={settings.boardVariant}
                 onChange={(e) => setSettings({ ...settings, boardVariant: e.target.value as RoomSettings["boardVariant"] })}
               >
@@ -183,7 +183,7 @@ function SetupPageContent() {
                 {mode === "ai" && (
                   <label className="block text-xs uppercase tracking-[0.12em] text-slate-300">
                     AI DIFFICULTY
-                    <select className="focusable mt-2 w-full rounded-xl border border-white/20 bg-black/35 p-3 text-sm" value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
+                    <select className="focusable mt-2 w-full rounded-xl border border-[#2a2a2a] bg-[#121212] p-3 text-sm" value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
                       <option value="easy">EASY</option>
                       <option value="medium">MEDIUM</option>
                       <option value="hard">HARD</option>
@@ -193,7 +193,7 @@ function SetupPageContent() {
 
                 <label className="block text-xs uppercase tracking-[0.12em] text-slate-300">
                   YOUR SIDE
-                  <select className="focusable mt-2 w-full rounded-xl border border-white/20 bg-black/35 p-3 text-sm" value={side} onChange={(e) => setSide(e.target.value as "X" | "O")}>
+                  <select className="focusable mt-2 w-full rounded-xl border border-[#2a2a2a] bg-[#121212] p-3 text-sm" value={side} onChange={(e) => setSide(e.target.value as "X" | "O")}>
                     <option value="X">X</option>
                     <option value="O">O</option>
                   </select>
@@ -222,7 +222,7 @@ function SetupPageContent() {
                     value={roomCode}
                     onChange={(e) => setRoomCode(e.target.value)}
                     placeholder="ROOMCODE"
-                    className="focusable w-full rounded-xl border border-white/20 bg-black/35 p-3 text-sm uppercase"
+                    className="focusable w-full rounded-xl border border-[#2a2a2a] bg-[#121212] p-3 text-sm uppercase"
                   />
                   <UIButton variant="secondary" onClick={joinRoom}>
                     Join
@@ -241,7 +241,7 @@ function SetupPageContent() {
                     value={roomCode}
                     onChange={(e) => setRoomCode(e.target.value)}
                     placeholder="ROOMCODE"
-                    className="focusable w-full rounded-xl border border-white/20 bg-black/35 p-3 text-sm uppercase"
+                    className="focusable w-full rounded-xl border border-[#2a2a2a] bg-[#121212] p-3 text-sm uppercase"
                   />
                   <UIButton variant="secondary" onClick={joinRoom}>
                     Join

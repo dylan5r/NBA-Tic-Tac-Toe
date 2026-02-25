@@ -16,7 +16,7 @@ export const ModeCard = ({
     href={href}
     className={clsx(
       "group card-hover relative flex h-full flex-col overflow-hidden rounded-xl border p-8 transition-all",
-      "bg-white dark:bg-white/5 border-slate-200 dark:border-white/10",
+      "bg-[#1e1e1e] border-[#2a2a2a]",
       accent === "orange" && "hover:border-[#ee8c2b]",
       accent === "blue" && "hover:border-sky-400",
       accent === "red" && "hover:border-rose-400",
@@ -28,7 +28,7 @@ export const ModeCard = ({
       <span className="material-symbols-outlined text-[#221910] text-3xl font-bold">sports_basketball</span>
     </div>
     <h4 className="text-xl font-bold mb-3 uppercase tracking-tight">{title}</h4>
-    <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed mb-8">{description}</p>
+    <p className="text-slate-400 text-sm leading-relaxed mb-8">{description}</p>
     <div className="mt-auto flex items-center justify-between">
       <span className="text-[10px] font-black uppercase tracking-widest text-[#ee8c2b]">Play Mode</span>
       <span className="material-symbols-outlined text-[#ee8c2b]/40 group-hover:text-[#ee8c2b]">arrow_forward_ios</span>

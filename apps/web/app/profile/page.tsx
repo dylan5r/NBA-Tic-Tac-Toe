@@ -19,8 +19,8 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-background-light text-slate-900 dark:bg-background-dark dark:text-slate-100">
-      <nav className="sticky top-0 z-50 border-b border-[#ee8c2b]/10 bg-background-dark/80 backdrop-blur-md">
+    <div className="min-h-screen bg-[#121212] text-slate-100">
+      <nav className="sticky top-0 z-50 border-b border-[#2a2a2a] bg-[#121212]/90 backdrop-blur-md">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-[#ee8c2b] flex items-center justify-center"><span className="material-symbols-outlined text-[#221910]">grid_view</span></div>
@@ -31,7 +31,7 @@ export default function ProfilePage() {
       </nav>
 
       <main className="mx-auto max-w-7xl px-6 py-10">
-        <section className="relative mb-8 overflow-hidden rounded-xl border border-[#ee8c2b]/10 bg-white/5 p-8">
+        <section className="relative mb-8 overflow-hidden rounded-xl border border-[#2a2a2a] bg-[#1e1e1e] p-8">
           <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#ee8c2b]/10 blur-3xl" />
           <div className="relative flex flex-col gap-6 md:flex-row md:items-end">
             <div className="h-32 w-32 rounded-full border-4 border-[#ee8c2b] bg-black/20" />
@@ -40,7 +40,7 @@ export default function ProfilePage() {
                 <h1 className="text-4xl font-black uppercase tracking-tight md:text-5xl">{user.username}</h1>
                 <span className="rounded-full border border-[#ee8c2b]/30 bg-[#ee8c2b]/20 px-3 py-1 text-xs font-bold uppercase tracking-widest text-[#ee8c2b]">Hall of Fame</span>
               </div>
-              <p className="mb-4 text-sm text-slate-400">Global competitor profile</p>
+              <p className="mb-4 text-sm text-slate-300">Global competitor profile</p>
             </div>
           </div>
         </section>
@@ -48,7 +48,7 @@ export default function ProfilePage() {
         <section className="mb-10 grid grid-cols-1 gap-6 md:grid-cols-3">
           <div className="surface rounded-xl p-6 text-center">
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#ee8c2b]/70">Career Record</p>
-            <div className="text-5xl font-black tracking-tighter">{user.wins}<span className="px-2 text-[#ee8c2b]/40">-</span>{user.losses}</div>
+              <div className="text-5xl font-black tracking-tighter text-white">{user.wins}<span className="px-2 text-[#ee8c2b]/40">-</span>{user.losses}</div>
           </div>
           <div className="surface rounded-xl p-6 text-center">
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#ee8c2b]/70">Rating</p>
@@ -56,7 +56,7 @@ export default function ProfilePage() {
           </div>
           <div className="surface rounded-xl p-6 text-center">
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#ee8c2b]/70">Streak</p>
-            <div className="text-5xl font-black tracking-tighter">{user.streak}</div>
+              <div className="text-5xl font-black tracking-tighter text-white">{user.streak}</div>
           </div>
         </section>
 
@@ -66,7 +66,7 @@ export default function ProfilePage() {
           </h2>
           <div className="space-y-3">
             {history.map((m) => (
-              <div key={m.id} className="group flex items-center justify-between rounded-lg border border-[#ee8c2b]/10 bg-white/5 p-4 hover:border-[#ee8c2b]/40">
+              <div key={m.id} className="group flex items-center justify-between rounded-lg border border-[#2a2a2a] bg-[#1e1e1e] p-4 hover:border-[#ee8c2b]/50">
                 <div>
                   <p className="text-base font-bold uppercase tracking-tight">{m.mode.replaceAll("_", " ")}</p>
                   <p className="text-xs text-slate-400">{new Date(m.endedAt).toLocaleString()}</p>
